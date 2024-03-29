@@ -1,6 +1,12 @@
-use crate::{executor::Executor, RexecuterError};
+use crate::{
+    backend::{Backend, EnqueuableJob},
+    executor::Executor,
+    RexecuterError,
+};
 use chrono::{DateTime, Duration, Utc};
 use serde::{de::DeserializeOwned, Serialize};
+
+use super::{JobId, JobStatus};
 
 pub struct JobBuilder<E>
 where
@@ -8,7 +14,7 @@ where
     E::Data: Serialize + DeserializeOwned,
 {
     data: Option<E::Data>,
-    max_attempts: i32,
+    max_attempts: Option<u32>,
     tags: Vec<String>,
     schedule_at: DateTime<Utc>,
 }
@@ -21,7 +27,7 @@ where
     fn default() -> Self {
         Self {
             data: Default::default(),
-            max_attempts: 5,
+            max_attempts: None,
             tags: Default::default(),
             schedule_at: Default::default(),
         }
@@ -40,9 +46,9 @@ where
         }
     }
 
-    pub fn with_max_attempts(self, max_attempts: i32) -> Self {
+    pub fn with_max_attempts(self, max_attempts: u32) -> Self {
         Self {
-            max_attempts,
+            max_attempts: Some(max_attempts),
             ..self
         }
     }
@@ -76,28 +82,46 @@ where
         self
     }
 
-    pub async fn enqueue(self) -> Result<(), RexecuterError> {
-        // TODO: write to DB
+    pub async fn enqueue<B: Backend>(self, backend: &B) -> Result<JobId, RexecuterError>
+    where
+        E::Data: 'static + Send,
+    {
         // Should this wake the Rexecutor
-        Ok(())
+        backend
+            .enqueue(EnqueuableJob {
+                status: JobStatus::Scheduled,
+                data: self.data,
+                executor: E::NAME.to_owned(),
+                max_attempts: self.max_attempts.unwrap_or(E::MAX_ATTEMPTS),
+                schedule_at: self.schedule_at,
+            })
+            .await
+            .map_err(RexecuterError::from)
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use crate::executor::test::SimpleExecutor;
+    use crate::{backend::test::MockBackend, executor::test::SimpleExecutor, job::JobId};
 
     use super::*;
 
     #[tokio::test]
     async fn enqueue() {
-        JobBuilder::<SimpleExecutor>::default()
+        let expected_job_id = JobId(0);
+
+        let mut backend = MockBackend::default();
+        backend.expect_enqueue_returning(Ok(expected_job_id));
+
+        let job_id = JobBuilder::<SimpleExecutor>::default()
             .with_max_attempts(2)
             .with_tags(vec!["initial_job"])
             .with_data("First job".into())
             .schedule_in(Duration::hours(2))
-            .enqueue()
+            .enqueue(&backend)
             .await
             .unwrap();
+
+        assert_eq!(job_id, expected_job_id);
     }
 }

@@ -1,11 +1,13 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, ops::Deref};
 
 pub mod backend;
 pub mod executor;
 pub mod job;
 
+use backend::{Backend, BackendError};
 use executor::Executor;
 use job::JobId;
+use thiserror::Error;
 use tokio::{
     sync::{
         mpsc,
@@ -14,11 +16,11 @@ use tokio::{
     task::JoinHandle,
 };
 
-
 #[derive(Default, Debug)]
-pub struct Rexecuter {
+pub struct Rexecuter<B: Backend> {
     executors: HashMap<&'static str, ExecutorHandle>,
     receiver: Option<oneshot::Receiver<()>>,
+    backend: B,
 }
 
 #[derive(Debug)]
@@ -46,7 +48,10 @@ enum Message {
     Terminate,
 }
 
-impl Rexecuter {
+impl<B> Rexecuter<B>
+where
+    B: Backend + Send + 'static,
+{
     const DEFAULT_DELAY: std::time::Duration = std::time::Duration::from_secs(5);
     pub fn with_executor<E: Executor>(mut self) -> Self {
         let (sender, mut rx) = mpsc::unbounded_channel();
@@ -87,13 +92,16 @@ impl Rexecuter {
 
     async fn run(mut self) {
         loop {
+            let _ = self
+                .tick()
+                .await
+                .map_err(|error| tracing::error!(?error, "Failed to get jobs"));
             tokio::select! {
                 _ = self.receiver.as_mut().unwrap() => {
                     let _ = self.shutdown().await;
                     break;
                 }
                 _ = tokio::time::sleep(Self::DEFAULT_DELAY) => {
-                    self.tick().await
                 }
 
             }
@@ -111,8 +119,19 @@ impl Rexecuter {
         .collect()
     }
 
-    async fn tick(&mut self) {
-        //
+    async fn tick(&mut self) -> Result<(), BackendError> {
+        self.backend
+            .ready_jobs()
+            .await?
+            .into_iter()
+            .for_each(|job| {
+                match self.executors.get(job.executor.deref()) {
+                    // TODO decide how to handle errors here
+                    Some(handle) => handle.sender.send(Message::JobWaiting(job.id)).unwrap(),
+                    None => tracing::warn!(?job.executor, "No executor found for job {:?}", job.id),
+                }
+            });
+        Ok(())
     }
 }
 
@@ -145,19 +164,22 @@ impl Drop for RexecuterHandle {
     }
 }
 
-#[derive(Debug, Eq, PartialEq, Clone)]
+#[derive(Debug, Eq, PartialEq, Clone, Error)]
 pub enum RexecuterError {
+    #[error("Failed to gracefully shut down")]
     GracefulShutdownFailed,
+    #[error("Error communicating with the backend")]
+    BackendError(#[from] BackendError),
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::executor::test::SimpleExecutor;
+    use crate::{backend::test::MockBackend, executor::test::SimpleExecutor};
 
     #[tokio::test]
     async fn setup() {
-        let _handle = Rexecuter::default()
+        let _handle = Rexecuter::<MockBackend>::default()
             .with_executor::<SimpleExecutor>()
             .spawn();
     }

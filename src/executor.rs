@@ -20,8 +20,22 @@ pub trait Executor {
     }
 }
 
-#[derive(Debug, Eq, PartialEq, Clone)]
+#[derive(Debug, Eq, PartialEq, Clone, Hash)]
 pub struct ExecutorIdentifier(String);
+
+impl From<String> for ExecutorIdentifier {
+    fn from(value: String) -> Self {
+        Self(value)
+    }
+}
+
+impl std::ops::Deref for ExecutorIdentifier {
+    type Target = str;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
 
 pub enum ExecutionResult {
     Done,
