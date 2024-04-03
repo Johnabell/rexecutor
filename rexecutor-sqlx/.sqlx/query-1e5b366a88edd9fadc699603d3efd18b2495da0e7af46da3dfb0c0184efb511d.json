@@ -1,0 +1,28 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT id, executor\n            FROM rexecutor_jobs\n            WHERE status in ('scheduled', 'retryable')\n            AND scheduled_at < $1\n            ORDER BY scheduled_at\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 1,
+        "name": "executor",
+        "type_info": "Varchar"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Timestamptz"
+      ]
+    },
+    "nullable": [
+      false,
+      false
+    ]
+  },
+  "hash": "1e5b366a88edd9fadc699603d3efd18b2495da0e7af46da3dfb0c0184efb511d"
+}

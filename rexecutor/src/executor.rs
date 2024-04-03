@@ -8,15 +8,19 @@ use crate::job::Job;
 pub trait Executor {
     type Data;
     const NAME: &'static str;
-    const MAX_ATTEMPTS: u32 = 5;
+    const MAX_ATTEMPTS: u16 = 5;
+    const BLOCKING: bool = false;
+
     async fn execute(job: Job<Self::Data>) -> ExecutionResult;
 
+    // TODO: make module for different backoff strategies
     fn backoff(job: Job<Self::Data>) -> Duration {
         Duration::seconds(10 * job.attempt as i64 + 1)
     }
 
-    fn timeout(_job: Job<Self::Data>) -> Duration {
-        Duration::minutes(5)
+    // TODO: make Option
+    fn timeout(_job: &Job<Self::Data>) -> std::time::Duration {
+        std::time::Duration::from_secs(3000)
     }
 }
 
@@ -39,14 +43,16 @@ impl std::ops::Deref for ExecutorIdentifier {
 
 pub enum ExecutionResult {
     Done,
-    Cancelled { reason: Box<dyn Display> },
+    Cancelled { reason: Box<dyn CancellationReason> },
     Snooze { delay: Duration },
     Error { error: Box<dyn ExecutionError> },
 }
 
-pub trait ExecutionError: Error {
+pub trait ExecutionError: Error + Send {
     fn error_type(&self) -> &'static str;
 }
+
+pub trait CancellationReason: Display + Send {}
 
 #[cfg(test)]
 pub(crate) mod test {
@@ -62,7 +68,7 @@ pub(crate) mod test {
     impl Executor for SimpleExecutor {
         type Data = String;
         const NAME: &'static str = "simple_executor";
-        const MAX_ATTEMPTS: u32 = 2;
+        const MAX_ATTEMPTS: u16 = 2;
         async fn execute(_job: Job<Self::Data>) -> ExecutionResult {
             ExecutionResult::Done
         }

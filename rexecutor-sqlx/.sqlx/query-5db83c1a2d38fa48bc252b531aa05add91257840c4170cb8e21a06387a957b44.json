@@ -1,0 +1,38 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE rexecutor_jobs SET\n                status = $2,\n                data = $3,\n                attempt = $4,\n                max_attempts = $5,\n                errors = $6,\n                scheduled_at = $7,\n                attempted_at = $8,\n                completed_at = $9,\n                cancelled_at = $10,\n                discarded_at = $11\n            WHERE id = $1\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int4",
+        {
+          "Custom": {
+            "name": "rexecutor_job_state",
+            "kind": {
+              "Enum": [
+                "scheduled",
+                "executing",
+                "retryable",
+                "complete",
+                "cancelled",
+                "discarded"
+              ]
+            }
+          }
+        },
+        "Jsonb",
+        "Int4",
+        "Int4",
+        "JsonbArray",
+        "Timestamptz",
+        "Timestamptz",
+        "Timestamptz",
+        "Timestamptz",
+        "Timestamptz"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "5db83c1a2d38fa48bc252b531aa05add91257840c4170cb8e21a06387a957b44"
+}

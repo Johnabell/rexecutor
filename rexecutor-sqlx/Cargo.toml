@@ -1,0 +1,25 @@
+[package]
+name = "rexecutor-sqlx"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+rexecutor = { path = "../rexecutor" }
+async-trait = "0.1.79"
+chrono = { version = "0.4.37", features = ["serde"] }
+futures = "0.3.30"
+serde = "1.0.197"
+serde_json = "1.0.115"
+sqlx = { version = "0.7.*", features = [
+  "postgres",
+  "runtime-tokio-native-tls",
+  "uuid",
+  "json",
+  "chrono",
+  "migrate",
+] }
+thiserror = "1.0.58"
+tokio = { version = "1.37.0", features = ["rt", "macros", "sync", "time"] }
+tracing = "0.1.40"

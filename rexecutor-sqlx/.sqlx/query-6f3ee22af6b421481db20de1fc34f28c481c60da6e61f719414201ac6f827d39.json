@@ -1,0 +1,20 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "SELECT scheduled_at\n            FROM rexecutor_jobs\n            WHERE status in ('scheduled', 'retryable')\n            ORDER BY scheduled_at\n            LIMIT 1\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "scheduled_at",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "6f3ee22af6b421481db20de1fc34f28c481c60da6e61f719414201ac6f827d39"
+}

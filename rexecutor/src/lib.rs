@@ -1,26 +1,44 @@
-use std::{collections::HashMap, ops::Deref};
+use std::{
+    any::TypeId,
+    collections::HashMap,
+    ops::{Deref, Sub},
+};
 
 pub mod backend;
 pub mod executor;
 pub mod job;
 
 use backend::{Backend, BackendError};
+use chrono::Utc;
 use executor::Executor;
-use job::JobId;
+use job::{runner::JobRunner, JobId};
+use serde::de::DeserializeOwned;
 use thiserror::Error;
 use tokio::{
     sync::{
         mpsc,
         oneshot::{self, Sender},
+        OnceCell, RwLock,
     },
     task::JoinHandle,
 };
 
-#[derive(Default, Debug)]
+#[derive(Debug)]
 pub struct Rexecuter<B: Backend> {
     executors: HashMap<&'static str, ExecutorHandle>,
     receiver: Option<oneshot::Receiver<()>>,
+    waker_receiver: mpsc::UnboundedReceiver<WakeMessage>,
+    waker_sender: mpsc::UnboundedSender<WakeMessage>,
     backend: B,
+}
+
+impl<B> Default for Rexecuter<B>
+where
+    B: Backend + Default,
+{
+    fn default() -> Self {
+        Self::new(Default::default())
+    }
 }
 
 #[derive(Debug)]
@@ -48,24 +66,62 @@ enum Message {
     Terminate,
 }
 
+enum WakeMessage {
+    Wake,
+}
+
+static EXECUTORS: OnceCell<RwLock<HashMap<TypeId, mpsc::UnboundedSender<WakeMessage>>>> =
+    OnceCell::const_new();
+
 impl<B> Rexecuter<B>
 where
-    B: Backend + Send + 'static,
+    B: Backend,
 {
     const DEFAULT_DELAY: std::time::Duration = std::time::Duration::from_secs(5);
-    pub fn with_executor<E: Executor>(mut self) -> Self {
+
+    pub fn new(backend: B) -> Self {
+        let (waker_sender, waker_receiver) = mpsc::unbounded_channel();
+        Self {
+            executors: Default::default(),
+            receiver: None,
+            waker_sender,
+            waker_receiver,
+            backend,
+        }
+    }
+}
+
+pub struct PrunerConfig {}
+
+impl<B> Rexecuter<B>
+where
+    B: Backend + Send + 'static + Sync,
+{
+    pub async fn with_executor<E>(mut self) -> Self
+    where
+        E: Executor + 'static + Sync + Send,
+        E::Data: Send + DeserializeOwned,
+    {
+        EXECUTORS
+            .get_or_init(|| async { Default::default() })
+            .await
+            .write()
+            .await
+            .insert(TypeId::of::<E>(), self.waker_sender.clone());
+
         let (sender, mut rx) = mpsc::unbounded_channel();
 
-        let handle = tokio::spawn(async move {
-            while let Some(message) = rx.recv().await {
-                match message {
-                    Message::JobWaiting(_id) => {
-                        //read job
-                        //decode
-                        //execute
+        let handle = tokio::spawn({
+            let backend = self.backend.clone();
+            async move {
+                let runner = JobRunner::<B, E>::new(backend);
+                while let Some(message) = rx.recv().await {
+                    match message {
+                        Message::JobWaiting(id) => runner.run(id).await,
+                        Message::Terminate => break,
                     }
-                    Message::Terminate => break,
                 }
+                tracing::debug!("Shutting down Rexecutor job runner for {}", E::NAME);
             }
         });
 
@@ -90,25 +146,45 @@ where
         }
     }
 
+    pub fn with_job_pruner(self, _config: PrunerConfig) -> Self {
+        // TODO implement this pruner
+        self
+    }
+
     async fn run(mut self) {
         loop {
             let _ = self
                 .tick()
                 .await
-                .map_err(|error| tracing::error!(?error, "Failed to get jobs"));
+                .inspect_err(|error| tracing::error!(?error, "Failed to get jobs"));
+            // Sleep till next tick
+            let delay = match self
+                .backend
+                .next_job_scheduled_at()
+                .await
+                .inspect_err(|error| tracing::error!(?error, "Failed to get next scheduled at"))
+            {
+                Ok(Some(time)) => time
+                    .sub(Utc::now())
+                    .to_std()
+                    .unwrap_or(std::time::Duration::ZERO)
+                    .min(Self::DEFAULT_DELAY),
+                _ => Self::DEFAULT_DELAY,
+            };
             tokio::select! {
                 _ = self.receiver.as_mut().unwrap() => {
                     let _ = self.shutdown().await;
                     break;
-                }
-                _ = tokio::time::sleep(Self::DEFAULT_DELAY) => {
-                }
+                },
+                _ = self.waker_receiver.recv() => { },
+                _ = tokio::time::sleep(delay) => { },
 
             }
         }
     }
 
     async fn shutdown(mut self) -> Result<Vec<()>, RexecuterError> {
+        tracing::debug!("Shutting down Rexecutor tasks");
         futures::future::join_all(
             self.executors
                 .values_mut()
@@ -135,6 +211,20 @@ where
     }
 }
 
+pub(crate) fn wake_rexecutor<E: Executor + 'static>() {
+    EXECUTORS.get().iter().for_each(|inner| {
+        tokio::spawn(async {
+            match inner.read().await.get(&TypeId::of::<E>()) {
+                Some(waker) => {
+                    if let Err(err) = waker.send(WakeMessage::Wake) {
+                        tracing::error!(?err, "Failed to send executor wake message")
+                    }
+                }
+                None => tracing::error!("No executor running for {:?}", TypeId::of::<E>()),
+            }
+        });
+    });
+}
 pub struct RexecuterHandle {
     sender: Option<Sender<()>>,
     handle: Option<JoinHandle<()>>,
@@ -164,7 +254,7 @@ impl Drop for RexecuterHandle {
     }
 }
 
-#[derive(Debug, Eq, PartialEq, Clone, Error)]
+#[derive(Debug, Error)]
 pub enum RexecuterError {
     #[error("Failed to gracefully shut down")]
     GracefulShutdownFailed,
@@ -181,6 +271,7 @@ mod tests {
     async fn setup() {
         let _handle = Rexecuter::<MockBackend>::default()
             .with_executor::<SimpleExecutor>()
+            .await
             .spawn();
     }
 }

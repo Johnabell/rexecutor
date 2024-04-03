@@ -1,0 +1,26 @@
+[package]
+name = "rexecuter-exmample-postgres"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[dependencies]
+rexecutor = { path = "../../rexecutor" }
+rexecutor-sqlx = { path = "../../rexecutor-sqlx" }
+async-trait = "0.1.79"
+chrono = "0.4.37"
+futures = "0.3.30"
+serde = "1.0.197"
+serde_json = "1.0.115"
+sqlx = { version = "0.7.*", features = [
+  "postgres",
+  "runtime-tokio-native-tls",
+  "uuid",
+  "json",
+  "chrono",
+  "migrate",
+] }
+thiserror = "1.0.58"
+tokio = { version = "1.37.0", features = ["rt", "macros", "sync", "time", "rt-multi-thread"] }
+tracing = "0.1.40"
+tracing-subscriber = "0.3.18"

@@ -1,22 +1,22 @@
 use crate::{
     backend::{Backend, EnqueuableJob},
     executor::Executor,
-    RexecuterError,
+    wake_rexecutor, RexecuterError,
 };
 use chrono::{DateTime, Duration, Utc};
 use serde::{de::DeserializeOwned, Serialize};
 
-use super::{JobId, JobStatus};
+use super::JobId;
 
 pub struct JobBuilder<E>
 where
-    E: Executor,
+    E: Executor + 'static,
     E::Data: Serialize + DeserializeOwned,
 {
     data: Option<E::Data>,
-    max_attempts: Option<u32>,
+    max_attempts: Option<u16>,
     tags: Vec<String>,
-    schedule_at: DateTime<Utc>,
+    scheduled_at: DateTime<Utc>,
 }
 
 impl<E> Default for JobBuilder<E>
@@ -29,7 +29,7 @@ where
             data: Default::default(),
             max_attempts: None,
             tags: Default::default(),
-            schedule_at: Default::default(),
+            scheduled_at: Default::default(),
         }
     }
 }
@@ -46,7 +46,7 @@ where
         }
     }
 
-    pub fn with_max_attempts(self, max_attempts: u32) -> Self {
+    pub fn with_max_attempts(self, max_attempts: u16) -> Self {
         Self {
             max_attempts: Some(max_attempts),
             ..self
@@ -54,13 +54,13 @@ where
     }
     pub fn schedule_at(self, schedule_at: DateTime<Utc>) -> Self {
         Self {
-            schedule_at,
+            scheduled_at: schedule_at,
             ..self
         }
     }
     pub fn schedule_in(self, schedule_in: Duration) -> Self {
         Self {
-            schedule_at: Utc::now() + schedule_in,
+            scheduled_at: Utc::now() + schedule_in,
             ..self
         }
     }
@@ -86,17 +86,17 @@ where
     where
         E::Data: 'static + Send,
     {
-        // Should this wake the Rexecutor
-        backend
+        let job_id = backend
             .enqueue(EnqueuableJob {
-                status: JobStatus::Scheduled,
                 data: self.data,
                 executor: E::NAME.to_owned(),
                 max_attempts: self.max_attempts.unwrap_or(E::MAX_ATTEMPTS),
-                schedule_at: self.schedule_at,
+                scheduled_at: self.scheduled_at,
             })
-            .await
-            .map_err(RexecuterError::from)
+            .await?;
+        wake_rexecutor::<E>();
+
+        Ok(job_id)
     }
 }
 

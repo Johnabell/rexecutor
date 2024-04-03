@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE rexecutor_jobs SET status = 'complete' WHERE id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int4"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "6f2265238d294f53595a59cc480cda1e402146020cd452c290b9600525ab571c"
+}

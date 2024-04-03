@@ -1,0 +1,10 @@
+version: "3"
+
+services:
+  postgres:
+    image: public.ecr.aws/bitnami/postgresql:12
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_USER: postgres

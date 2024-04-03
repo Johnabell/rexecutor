@@ -1,0 +1,29 @@
+[env]
+DATABASE_URL = "postgresql://postgres:postgres@localhost:5432/postgres"
+SQLX_OFFLINE=true
+
+[tasks.env]
+command =  "env"
+
+[tasks.db-setup]
+description = "Setup DB"
+command = "sqlx"
+args = ["database", "setup"]
+
+[tasks.db-prepare]
+description = "Sync sqlx-data file"
+command = "cargo"
+args = ["sqlx", "prepare", "--", "--tests", "--lib"]
+dependencies = ["db-setup"]
+env = { "SQLX_OFFLINE" = "false" }
+
+[tasks.db-reset]
+description = "Reset DB"
+command = "sqlx"
+args = ["database", "reset", "-y"]
+
+[tasks.db-check]
+description = "Check if sqlx-data is out of date"
+command = "cargo"
+args = ["sqlx", "prepare", "--check", "--", "--lib"]
+env = { "SQLX_OFFLINE" = "false" }
