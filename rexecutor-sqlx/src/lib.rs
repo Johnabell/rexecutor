@@ -13,6 +13,7 @@ mod types;
 
 #[derive(Clone, Debug)]
 pub struct RexecutorPgBackend(PgPool);
+pub struct RexecutorPgBackendRef<'a>(&'a PgPool);
 
 impl std::ops::Deref for RexecutorPgBackend {
     type Target = PgPool;
@@ -25,6 +26,12 @@ impl std::ops::Deref for RexecutorPgBackend {
 impl From<PgPool> for RexecutorPgBackend {
     fn from(value: PgPool) -> Self {
         Self(value)
+    }
+}
+
+impl From<&PgPool> for RexecutorPgBackend {
+    fn from(value: &PgPool) -> Self {
+        Self(value.to_owned())
     }
 }
 
@@ -73,11 +80,13 @@ impl RexecutorPgBackend {
     const DELTA: Duration = Duration::microseconds(10);
 
     async fn load_job_mark_as_executing(&self, id: JobId) -> sqlx::Result<Option<Job>> {
+        // TODO the condition here should probably simply be not executing, unless we want a
+        // special mechanism for handling rerunning canncelled, completed, and discared jobs.
         sqlx::query_as!(
             Job,
             r#"UPDATE rexecutor_jobs
             SET status = 'executing', attempted_at = timezone('UTC'::text, now())
-            WHERE id = $1 AND status != 'executing'
+            WHERE id = $1 AND status in ('scheduled', 'retryable')
             RETURNING
                 id,
                 status AS "status: JobStatus",

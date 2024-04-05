@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "UPDATE rexecutor_jobs\n            SET status = 'executing', attempted_at = timezone('UTC'::text, now())\n            WHERE id = $1 AND status != 'executing'\n            RETURNING\n                id,\n                status AS \"status: JobStatus\",\n                executor,\n                data,\n                attempt,\n                max_attempts,\n                errors,\n                inserted_at,\n                scheduled_at,\n                attempted_at,\n                completed_at,\n                cancelled_at,\n                discarded_at\n            ",
+  "query": "UPDATE rexecutor_jobs\n            SET status = 'executing', attempted_at = timezone('UTC'::text, now())\n            WHERE id = $1 AND status in ('scheduled', 'retryable')\n            RETURNING\n                id,\n                status AS \"status: JobStatus\",\n                executor,\n                data,\n                attempt,\n                max_attempts,\n                errors,\n                inserted_at,\n                scheduled_at,\n                attempted_at,\n                completed_at,\n                cancelled_at,\n                discarded_at\n            ",
   "describe": {
     "columns": [
       {
@@ -104,5 +104,5 @@
       true
     ]
   },
-  "hash": "d5fc8a0b94cd28eeb09104dce5ab390bf09a69e3f166afa052390c3b77ec187e"
+  "hash": "eeeb58dc4cd6e1f269bd8c13fecb5df0107bb3e030563ea21bffeaf0359c5cb2"
 }
