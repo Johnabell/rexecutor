@@ -1,7 +1,8 @@
 use crate::{
     backend::{Backend, EnqueuableJob},
     executor::Executor,
-    wake_rexecutor, RexecuterError,
+    notifier::{InProcessNotifier, Notifier},
+    RexecuterError,
 };
 use chrono::{DateTime, Duration, Utc};
 use serde::{de::DeserializeOwned, Serialize};
@@ -94,7 +95,8 @@ where
                 scheduled_at: self.scheduled_at,
             })
             .await?;
-        wake_rexecutor::<E>();
+
+        InProcessNotifier::notify(E::NAME);
 
         Ok(job_id)
     }

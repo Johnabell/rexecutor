@@ -1,5 +1,4 @@
 use std::{
-    any::TypeId,
     collections::HashMap,
     ops::{Deref, Sub},
 };
@@ -7,18 +6,19 @@ use std::{
 pub mod backend;
 pub mod executor;
 pub mod job;
+pub mod notifier;
 
 use backend::{Backend, BackendError};
 use chrono::Utc;
 use executor::Executor;
 use job::{runner::JobRunner, JobId};
+use notifier::{InProcessNotifier, Notifier};
 use serde::de::DeserializeOwned;
 use thiserror::Error;
 use tokio::{
     sync::{
         mpsc,
         oneshot::{self, Sender},
-        OnceCell, RwLock,
     },
     task::JoinHandle,
 };
@@ -70,9 +70,6 @@ enum WakeMessage {
     Wake,
 }
 
-static EXECUTORS: OnceCell<RwLock<HashMap<TypeId, mpsc::UnboundedSender<WakeMessage>>>> =
-    OnceCell::const_new();
-
 impl<B> Rexecuter<B>
 where
     B: Backend,
@@ -102,12 +99,7 @@ where
         E: Executor + 'static + Sync + Send,
         E::Data: Send + DeserializeOwned,
     {
-        EXECUTORS
-            .get_or_init(|| async { Default::default() })
-            .await
-            .write()
-            .await
-            .insert(TypeId::of::<E>(), self.waker_sender.clone());
+        InProcessNotifier::enroll(E::NAME, Box::new(self.waker_sender.clone())).await;
 
         let (sender, mut rx) = mpsc::unbounded_channel();
 
@@ -147,12 +139,13 @@ where
     }
 
     pub fn with_job_pruner(self, _config: PrunerConfig) -> Self {
-        // TODO implement this pruner
+        // TODO implement the pruner
         self
     }
 
     async fn run(mut self) {
         loop {
+            tracing::trace!("Running tick");
             let _ = self
                 .tick()
                 .await
@@ -167,10 +160,12 @@ where
                 Ok(Some(time)) => time
                     .sub(Utc::now())
                     .to_std()
-                    .unwrap_or(std::time::Duration::ZERO)
+                    // Find a better way to handle jobs bring triggered but not having been ran
+                    .unwrap_or(std::time::Duration::from_millis(10))
                     .min(Self::DEFAULT_DELAY),
                 _ => Self::DEFAULT_DELAY,
             };
+            dbg!(delay);
             tokio::select! {
                 _ = self.receiver.as_mut().unwrap() => {
                     let _ = self.shutdown().await;
@@ -211,20 +206,6 @@ where
     }
 }
 
-pub(crate) fn wake_rexecutor<E: Executor + 'static>() {
-    EXECUTORS.get().iter().for_each(|inner| {
-        tokio::spawn(async {
-            match inner.read().await.get(&TypeId::of::<E>()) {
-                Some(waker) => {
-                    if let Err(err) = waker.send(WakeMessage::Wake) {
-                        tracing::error!(?err, "Failed to send executor wake message")
-                    }
-                }
-                None => tracing::error!("No executor running for {:?}", TypeId::of::<E>()),
-            }
-        });
-    });
-}
 pub struct RexecuterHandle {
     sender: Option<Sender<()>>,
     handle: Option<JoinHandle<()>>,

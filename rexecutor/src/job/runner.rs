@@ -1,6 +1,7 @@
 use std::marker::PhantomData;
 
 use serde::de::DeserializeOwned;
+use tracing::{instrument, Instrument};
 
 use crate::{
     backend::Backend,
@@ -37,14 +38,16 @@ where
         match self.backend.lock_and_load::<E::Data>(job_id).await {
             Ok(Some(job)) => self.execute_job(job).await,
             Ok(None) => tracing::debug!("No job available to execute"),
-            // TODO handle error here
+            // TODO handle error here mark for retry
             Err(err) => tracing::error!(?err, "Failed to read job"),
         }
     }
 
+    #[instrument(skip(self, job), fields(job_id))]
     pub async fn execute_job(&self, job: Job<E::Data>) {
         let job_id = job.id;
-        let fut = tokio::time::timeout(E::timeout(&job), E::execute(job));
+        tracing::Span::current().record("job_id", &tracing::field::debug(&job_id));
+        let fut = tokio::time::timeout(E::timeout(&job), E::execute(job)).in_current_span();
         let result = if E::BLOCKING {
             tracing::debug!(%job_id, "Executing blocking job {job_id}");
             tokio::task::spawn_blocking(|| futures::executor::block_on(fut))
