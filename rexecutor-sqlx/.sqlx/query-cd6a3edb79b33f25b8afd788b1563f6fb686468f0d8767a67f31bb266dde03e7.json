@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "UPDATE rexecutor_jobs\n            SET status = 'executing', attempted_at = timezone('UTC'::text, now())\n            WHERE id = $1 AND status in ('scheduled', 'retryable')\n            RETURNING\n                id,\n                status AS \"status: JobStatus\",\n                executor,\n                data,\n                attempt,\n                max_attempts,\n                errors,\n                inserted_at,\n                scheduled_at,\n                attempted_at,\n                completed_at,\n                cancelled_at,\n                discarded_at\n            ",
+  "query": "UPDATE rexecutor_jobs\n            SET\n                status = 'executing',\n                attempted_at = timezone('UTC'::text, now()),\n                attempt = attempt + 1\n            WHERE id IN (\n                SELECT id from rexecutor_jobs\n                WHERE scheduled_at - timezone('UTC'::text, now()) < '00:00:00.1'\n                AND status in ('scheduled', 'retryable')\n                AND executor = $1\n                LIMIT 1\n                FOR UPDATE SKIP LOCKED\n            )\n            RETURNING\n                id,\n                status AS \"status: JobStatus\",\n                executor,\n                data,\n                attempt,\n                max_attempts,\n                errors,\n                inserted_at,\n                scheduled_at,\n                attempted_at,\n                completed_at,\n                cancelled_at,\n                discarded_at\n            ",
   "describe": {
     "columns": [
       {
@@ -85,7 +85,7 @@
     ],
     "parameters": {
       "Left": [
-        "Int4"
+        "Text"
       ]
     },
     "nullable": [
@@ -104,5 +104,5 @@
       true
     ]
   },
-  "hash": "eeeb58dc4cd6e1f269bd8c13fecb5df0107bb3e030563ea21bffeaf0359c5cb2"
+  "hash": "cd6a3edb79b33f25b8afd788b1563f6fb686468f0d8767a67f31bb266dde03e7"
 }

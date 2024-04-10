@@ -37,4 +37,35 @@ CREATE TABLE IF NOT EXISTS rexecutor_jobs (
 CREATE INDEX IF NOT EXISTS rexecutor_job_data_index ON public.rexecutor_jobs USING gin (data);
 CREATE INDEX IF NOT EXISTS rexecutor_job_meta_index ON public.rexecutor_jobs USING gin (metadata);
 
+CREATE OR REPLACE
+FUNCTION public.rexecutor_new_job_notify()
+  RETURNS trigger
+  LANGUAGE plpgsql
+AS $function$
+DECLARE
+  channel text;
+  notice json;
+BEGIN
+  IF NEW.status = 'scheduled' OR NEW.status = 'retryable' THEN
+    channel = 'public.rexecutor_scheduled';
+    notice = json_build_object('executor', NEW.executor, 'scheduled_at', NEW.scheduled_at);
+
+    PERFORM pg_notify(channel, notice::text);
+  END IF;
+
+  RETURN NULL;
+END;
+$function$
+;
+
+CREATE TRIGGER rexecutor_insert
+AFTER INSERT ON public.rexecutor_jobs
+FOR each ROW
+EXECUTE FUNCTION public.rexecutor_new_job_notify();
+
+CREATE TRIGGER rexecutor_update
+AFTER UPDATE ON public.rexecutor_jobs
+FOR each ROW
+EXECUTE FUNCTION public.rexecutor_new_job_notify();
+
 COMMIT;

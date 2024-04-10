@@ -1,7 +1,4 @@
-use std::{
-    collections::HashMap,
-    ops::{Deref, Sub},
-};
+use std::collections::HashMap;
 
 pub mod backend;
 pub mod executor;
@@ -9,26 +6,16 @@ pub mod job;
 pub mod notifier;
 
 use backend::{Backend, BackendError};
-use chrono::Utc;
 use executor::Executor;
-use job::{runner::JobRunner, JobId};
-use notifier::{InProcessNotifier, Notifier};
+use futures::StreamExt;
+use job::runner::JobRunner;
 use serde::de::DeserializeOwned;
 use thiserror::Error;
-use tokio::{
-    sync::{
-        mpsc,
-        oneshot::{self, Sender},
-    },
-    task::JoinHandle,
-};
+use tokio::{sync::mpsc, task::JoinHandle};
 
 #[derive(Debug)]
 pub struct Rexecuter<B: Backend> {
     executors: HashMap<&'static str, ExecutorHandle>,
-    receiver: Option<oneshot::Receiver<()>>,
-    waker_receiver: mpsc::UnboundedReceiver<WakeMessage>,
-    waker_sender: mpsc::UnboundedSender<WakeMessage>,
     backend: B,
 }
 
@@ -62,7 +49,6 @@ impl ExecutorHandle {
 }
 
 enum Message {
-    JobWaiting(JobId),
     Terminate,
 }
 
@@ -74,15 +60,9 @@ impl<B> Rexecuter<B>
 where
     B: Backend,
 {
-    const DEFAULT_DELAY: std::time::Duration = std::time::Duration::from_secs(5);
-
     pub fn new(backend: B) -> Self {
-        let (waker_sender, waker_receiver) = mpsc::unbounded_channel();
         Self {
             executors: Default::default(),
-            receiver: None,
-            waker_sender,
-            waker_receiver,
             backend,
         }
     }
@@ -94,23 +74,30 @@ impl<B> Rexecuter<B>
 where
     B: Backend + Send + 'static + Sync,
 {
-    pub async fn with_executor<E>(mut self) -> Self
+    pub fn with_executor<E>(mut self) -> Self
     where
         E: Executor + 'static + Sync + Send,
         E::Data: Send + DeserializeOwned,
     {
-        InProcessNotifier::enroll(E::NAME, Box::new(self.waker_sender.clone())).await;
-
         let (sender, mut rx) = mpsc::unbounded_channel();
 
         let handle = tokio::spawn({
             let backend = self.backend.clone();
             async move {
+                let stream = backend.clone().subscribe_new_events::<E>().await;
                 let runner = JobRunner::<B, E>::new(backend);
-                while let Some(message) = rx.recv().await {
-                    match message {
-                        Message::JobWaiting(id) => runner.run(id).await,
-                        Message::Terminate => break,
+                tokio::pin!(stream);
+                loop {
+                    tokio::select! {
+                        message = stream.next() => {
+                            match message {
+                                Some(Ok(job)) => runner.execute_job(job).await,
+                                _ => tracing::warn!("Failed to get from stream")
+                            }
+                        },
+                        _ = rx.recv() => {
+                            break;
+                        }
                     }
                 }
                 tracing::debug!("Shutting down Rexecutor job runner for {}", E::NAME);
@@ -126,59 +113,13 @@ where
         );
         self
     }
-    pub fn spawn(mut self) -> RexecuterHandle {
-        let (sender, receiver) = oneshot::channel();
-        self.receiver = Some(receiver);
-
-        let handle = tokio::spawn(async move { self.run().await });
-
-        RexecuterHandle {
-            sender: Some(sender),
-            handle: Some(handle),
-        }
-    }
 
     pub fn with_job_pruner(self, _config: PrunerConfig) -> Self {
         // TODO implement the pruner
         self
     }
 
-    async fn run(mut self) {
-        loop {
-            tracing::trace!("Running tick");
-            let _ = self
-                .tick()
-                .await
-                .inspect_err(|error| tracing::error!(?error, "Failed to get jobs"));
-            // Sleep till next tick
-            let delay = match self
-                .backend
-                .next_job_scheduled_at()
-                .await
-                .inspect_err(|error| tracing::error!(?error, "Failed to get next scheduled at"))
-            {
-                Ok(Some(time)) => time
-                    .sub(Utc::now())
-                    .to_std()
-                    // Find a better way to handle jobs bring triggered but not having been ran
-                    .unwrap_or(std::time::Duration::from_millis(10))
-                    .min(Self::DEFAULT_DELAY),
-                _ => Self::DEFAULT_DELAY,
-            };
-            dbg!(delay);
-            tokio::select! {
-                _ = self.receiver.as_mut().unwrap() => {
-                    let _ = self.shutdown().await;
-                    break;
-                },
-                _ = self.waker_receiver.recv() => { },
-                _ = tokio::time::sleep(delay) => { },
-
-            }
-        }
-    }
-
-    async fn shutdown(mut self) -> Result<Vec<()>, RexecuterError> {
+    pub async fn graceful_shutdown(mut self) -> Result<Vec<()>, RexecuterError> {
         tracing::debug!("Shutting down Rexecutor tasks");
         futures::future::join_all(
             self.executors
@@ -188,50 +129,6 @@ where
         .await
         .into_iter()
         .collect()
-    }
-
-    async fn tick(&mut self) -> Result<(), BackendError> {
-        self.backend
-            .ready_jobs()
-            .await?
-            .into_iter()
-            .for_each(|job| {
-                match self.executors.get(job.executor.deref()) {
-                    // TODO decide how to handle errors here
-                    Some(handle) => handle.sender.send(Message::JobWaiting(job.id)).unwrap(),
-                    None => tracing::warn!(?job.executor, "No executor found for job {:?}", job.id),
-                }
-            });
-        Ok(())
-    }
-}
-
-pub struct RexecuterHandle {
-    sender: Option<Sender<()>>,
-    handle: Option<JoinHandle<()>>,
-}
-
-impl RexecuterHandle {
-    pub async fn graceful_shutdown(&mut self) -> Result<(), RexecuterError> {
-        if let Some(sender) = self.sender.take() {
-            sender
-                .send(())
-                .map_err(|_| RexecuterError::GracefulShutdownFailed)?;
-        }
-        if let Some(handle) = self.handle.take() {
-            handle
-                .await
-                .map_err(|_| RexecuterError::GracefulShutdownFailed)?;
-        }
-        Ok(())
-    }
-}
-// Do we want this
-impl Drop for RexecuterHandle {
-    fn drop(&mut self) {
-        if let Some(sender) = self.sender.take() {
-            let _ = sender.send(());
-        }
     }
 }
 
@@ -252,7 +149,6 @@ mod tests {
     async fn setup() {
         let _handle = Rexecuter::<MockBackend>::default()
             .with_executor::<SimpleExecutor>()
-            .await
-            .spawn();
+            .await;
     }
 }

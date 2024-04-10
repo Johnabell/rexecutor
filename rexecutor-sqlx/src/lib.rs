@@ -1,56 +1,85 @@
-use std::ops::Deref;
+use std::{
+    collections::HashMap,
+    marker::PhantomData,
+    ops::{Deref, Sub},
+    sync::Arc,
+};
 
-use async_trait::async_trait;
-use chrono::{DateTime, Duration, Utc};
+use async_stream::stream;
+use chrono::{DateTime, Utc};
+use futures::Stream;
 use rexecutor::{
-    backend::{Backend, BackendError, EnqueuableJob, ReadyJob},
+    backend::{Backend, BackendError, EnqueuableJob},
+    executor::Executor,
     job::JobId,
 };
-use serde::{de::DeserializeOwned, Serialize};
-use sqlx::PgPool;
+use serde::{de::DeserializeOwned, Deserialize, Serialize};
+use sqlx::{postgres::PgListener, PgPool};
+use tokio::sync::{mpsc, RwLock};
 
 mod types;
 
 #[derive(Clone, Debug)]
-pub struct RexecutorPgBackend(PgPool);
+pub struct RexecutorPgBackend {
+    pool: PgPool,
+    subscribers: Arc<RwLock<HashMap<&'static str, Vec<mpsc::UnboundedSender<DateTime<Utc>>>>>>,
+}
+
 pub struct RexecutorPgBackendRef<'a>(&'a PgPool);
 
 impl std::ops::Deref for RexecutorPgBackend {
     type Target = PgPool;
 
     fn deref(&self) -> &Self::Target {
-        &self.0
+        &self.pool
     }
 }
 
 impl From<PgPool> for RexecutorPgBackend {
-    fn from(value: PgPool) -> Self {
-        Self(value)
+    fn from(pool: PgPool) -> Self {
+        Self {
+            pool,
+            subscribers: Default::default(),
+        }
     }
 }
 
 impl From<&PgPool> for RexecutorPgBackend {
     fn from(value: &PgPool) -> Self {
-        Self(value.to_owned())
+        Self {
+            pool: value.to_owned(),
+            subscribers: Default::default(),
+        }
     }
 }
 
-#[async_trait]
 impl Backend for RexecutorPgBackend {
-    async fn lock_and_load<D: Send + DeserializeOwned>(
-        &self,
-        id: JobId,
-    ) -> Result<Option<rexecutor::job::Job<D>>, BackendError> {
-        let job = self
-            .load_job_mark_as_executing(id)
+    #[instrument(skip(self))]
+    async fn subscribe_new_events<E>(
+        self,
+    ) -> impl Stream<Item = Result<rexecutor::job::Job<E::Data>, BackendError>>
+    where
+        E: Executor + Send,
+        E::Data: DeserializeOwned + Send,
+    {
+        let (sender, receiver) = mpsc::unbounded_channel();
+        self.subscribers
+            .write()
             .await
-            .map_err(|_| BackendError::BadStateError)?;
-        job.map(TryFrom::try_from).transpose()
-    }
-    async fn ready_jobs(&self) -> Result<Vec<ReadyJob>, BackendError> {
-        self.get_ready_jobs()
-            .await
-            .map_err(|_| BackendError::BadStateError)
+            .entry(E::NAME)
+            .or_default()
+            .push(sender);
+
+        let mut stream: ReadyJobStream<E> = ReadyJobStream {
+            receiver,
+            backend: self.clone(),
+            _executor: PhantomData,
+        };
+        stream! {
+            loop {
+                yield stream.next().await;
+            }
+        }
     }
     async fn enqueue<D: Send + Serialize>(
         &self,
@@ -61,12 +90,6 @@ impl Backend for RexecutorPgBackend {
             // TODO error handling
             .map_err(|_| BackendError::BadStateError)
     }
-    async fn next_job_scheduled_at(&self) -> Result<Option<DateTime<Utc>>, BackendError> {
-        // TODO add index for this
-        self.next_available_job_scheduled_at()
-            .await
-            .map_err(|_| BackendError::BadStateError)
-    }
     async fn mark_job_complete(&self, id: JobId) -> Result<(), BackendError> {
         self._mark_job_complete(id)
             .await
@@ -74,19 +97,124 @@ impl Backend for RexecutorPgBackend {
     }
 }
 
+#[derive(Deserialize, Debug)]
+struct Notification {
+    executor: String,
+    scheduled_at: DateTime<Utc>,
+}
+
+pub struct ReadyJobStream<E>
+where
+    E: Executor,
+{
+    backend: RexecutorPgBackend,
+    receiver: tokio::sync::mpsc::UnboundedReceiver<DateTime<Utc>>,
+    _executor: PhantomData<E>,
+}
+
+impl<E> ReadyJobStream<E>
+where
+    E: Executor,
+    E::Data: DeserializeOwned,
+{
+    const DEFAULT_DELAY: std::time::Duration = std::time::Duration::from_secs(5);
+    const DELTA: std::time::Duration = std::time::Duration::from_millis(10);
+
+    pub async fn next(&mut self) -> Result<rexecutor::job::Job<E::Data>, BackendError> {
+        loop {
+            let delay = match self
+                .backend
+                .next_available_job_scheduled_at_for_executor(E::NAME)
+                .await
+                .map_err(|_| BackendError::BadStateError)?
+            {
+                Some(timestamp) => timestamp
+                    .sub(Utc::now())
+                    .to_std()
+                    .unwrap_or(Self::DELTA)
+                    .min(Self::DEFAULT_DELAY),
+                _ => Self::DEFAULT_DELAY,
+            };
+            if delay <= Self::DELTA {
+                if let Some(job) = self
+                    .backend
+                    .load_job_mark_as_executing_for_executor(E::NAME)
+                    .await
+                    .map_err(|_| BackendError::BadStateError)?
+                {
+                    return job.try_into();
+                }
+            }
+            tokio::select! {
+                _ = self.receiver.recv() => { },
+                _ = tokio::time::sleep(delay) => { },
+
+            }
+        }
+    }
+}
+
+use tracing::instrument;
 use types::*;
 
 impl RexecutorPgBackend {
-    const DELTA: Duration = Duration::microseconds(10);
+    pub async fn new(pool: PgPool) -> Result<Self, BackendError> {
+        let this = Self {
+            pool,
+            subscribers: Default::default(),
+        };
+        let mut listener = PgListener::connect_with(&this)
+            .await
+            .map_err(|_| BackendError::BadStateError)?;
+        listener
+            .listen("public.rexecutor_scheduled")
+            .await
+            .map_err(|_| BackendError::BadStateError)?;
 
-    async fn load_job_mark_as_executing(&self, id: JobId) -> sqlx::Result<Option<Job>> {
+        tokio::spawn({
+            let subscribers = this.subscribers.clone();
+            async move {
+                while let Ok(notification) = listener.recv().await {
+                    let notification =
+                        serde_json::from_str::<Notification>(notification.payload()).unwrap();
+
+                    subscribers
+                        .read()
+                        .await
+                        .get(&notification.executor.as_str())
+                        .into_iter()
+                        .flatten()
+                        .for_each(|sender| {
+                            let _ = sender.send(notification.scheduled_at);
+                        });
+                }
+            }
+        });
+
+        Ok(this)
+    }
+
+    async fn load_job_mark_as_executing_for_executor(
+        &self,
+        executor: &str,
+    ) -> sqlx::Result<Option<Job>> {
         // TODO the condition here should probably simply be not executing, unless we want a
-        // special mechanism for handling rerunning canncelled, completed, and discared jobs.
+        // special mechanism for handling rerunning cancelled, completed, and discarded jobs.
         sqlx::query_as!(
             Job,
             r#"UPDATE rexecutor_jobs
-            SET status = 'executing', attempted_at = timezone('UTC'::text, now())
-            WHERE id = $1 AND status in ('scheduled', 'retryable')
+            SET
+                status = 'executing',
+                attempted_at = timezone('UTC'::text, now()),
+                attempt = attempt + 1
+            WHERE id IN (
+                SELECT id from rexecutor_jobs
+                WHERE scheduled_at - timezone('UTC'::text, now()) < '00:00:00.1'
+                AND status in ('scheduled', 'retryable')
+                AND executor = $1
+                LIMIT 1
+                FOR UPDATE SKIP LOCKED
+            )
             RETURNING
                 id,
                 status AS "status: JobStatus",
@@ -102,7 +230,7 @@ impl RexecutorPgBackend {
                 cancelled_at,
                 discarded_at
             "#,
-            i32::from(id)
+            executor
         )
         .fetch_optional(self.deref())
         .await
@@ -174,52 +302,38 @@ impl RexecutorPgBackend {
         Ok(())
     }
 
-    async fn next_available_job_scheduled_at(&self) -> sqlx::Result<Option<DateTime<Utc>>> {
+    async fn next_available_job_scheduled_at_for_executor(
+        &self,
+        executor: &'static str,
+    ) -> sqlx::Result<Option<DateTime<Utc>>> {
         Ok(sqlx::query!(
             r#"SELECT scheduled_at
             FROM rexecutor_jobs
             WHERE status in ('scheduled', 'retryable')
+            AND executor = $1
             ORDER BY scheduled_at
             LIMIT 1
-            "#
+            "#,
+            executor
         )
         .fetch_optional(self.deref())
         .await?
         .map(|data| data.scheduled_at))
-    }
-
-    async fn get_ready_jobs(&self) -> sqlx::Result<Vec<ReadyJob>> {
-        let cut_of = Utc::now() + Self::DELTA;
-        Ok(sqlx::query!(
-            r#"SELECT id, executor
-            FROM rexecutor_jobs
-            WHERE status in ('scheduled', 'retryable')
-            AND scheduled_at < $1
-            ORDER BY scheduled_at
-            "#,
-            cut_of
-        )
-        .fetch_all(self.deref())
-        .await?
-        .into_iter()
-        .map(|data| ReadyJob {
-            id: data.id.into(),
-            executor: data.executor.into(),
-        })
-        .collect())
     }
 }
 
 #[cfg(test)]
 mod test {
     use super::*;
-    use chrono::Duration;
+    use chrono::TimeDelta;
     use sqlx::PgPool;
+
+    const EXECUTOR: &str = "executor";
 
     impl RexecutorPgBackend {
         async fn with_mock_job(&self, scheduled_at: DateTime<Utc>) -> JobId {
             let job = EnqueuableJob {
-                executor: "executor".to_owned(),
+                executor: EXECUTOR.to_owned(),
                 data: "data".to_owned(),
                 max_attempts: 5,
                 scheduled_at,
@@ -253,44 +367,48 @@ mod test {
         }
     }
 
-    #[sqlx::test]
-    async fn ready_jobs_returns_empty_vec_when_db_empty(pool: PgPool) {
-        let backend: RexecutorPgBackend = pool.into();
-
-        let jobs = backend.ready_jobs().await.unwrap();
-
-        assert!(jobs.is_empty());
-    }
-
-    #[sqlx::test]
-    async fn ready_jobs_returns_empty_jobs_scheduled_in_past(pool: PgPool) {
-        let backend: RexecutorPgBackend = pool.into();
-        backend.with_mock_job(Utc::now() - Duration::hours(1)).await;
-        backend.with_mock_job(Utc::now()).await;
-
-        let jobs = backend.ready_jobs().await.unwrap();
-
-        assert_eq!(jobs.len(), 2);
-    }
-
     // TODO: add tests for ignoring running, cancelled, complete, and discarded jobs
 
     #[sqlx::test]
-    async fn lock_and_load_returns_none_when_there_is_no_job_for_the_id(pool: PgPool) {
+    async fn load_job_mark_as_executing_for_executor_returns_none_when_db_empty(pool: PgPool) {
         let backend: RexecutorPgBackend = pool.into();
-        let job_id = 0.into();
 
-        let job = backend.lock_and_load::<()>(job_id).await.unwrap();
+        let job = backend
+            .load_job_mark_as_executing_for_executor(EXECUTOR)
+            .await
+            .unwrap();
 
         assert!(job.is_none());
     }
 
     #[sqlx::test]
-    async fn lock_and_load_returns_available_job(pool: PgPool) {
+    async fn load_job_mark_as_executing_for_executor_returns_job_when_ready_for_execution(
+        pool: PgPool,
+    ) {
         let backend: RexecutorPgBackend = pool.into();
-        let job_id = backend.with_mock_job(Utc::now()).await;
+        let _ = backend.with_mock_job(Utc::now()).await;
 
-        let job = backend.lock_and_load::<String>(job_id).await.unwrap();
+        let job = backend
+            .load_job_mark_as_executing_for_executor(EXECUTOR)
+            .await
+            .unwrap();
+
+        assert!(job.is_some());
+    }
+
+    #[sqlx::test]
+    async fn load_job_mark_as_executing_for_executor_returns_job_when_job_scheduled_in_past(
+        pool: PgPool,
+    ) {
+        let backend: RexecutorPgBackend = pool.into();
+        let _ = backend
+            .with_mock_job(Utc::now() - TimeDelta::hours(3))
+            .await;
+
+        let job = backend
+            .load_job_mark_as_executing_for_executor(EXECUTOR)
+            .await
+            .unwrap();
 
         assert!(job.is_some());
     }
@@ -312,53 +430,5 @@ mod test {
         let all_jobs = backend.all_jobs().await.unwrap();
 
         assert_eq!(all_jobs.len(), 1);
-    }
-
-    #[sqlx::test]
-    async fn next_job_scheduled_at_returns_none_when_db_empty(pool: PgPool) {
-        let backend: RexecutorPgBackend = pool.into();
-
-        let next_job_scheduled_at = backend.next_job_scheduled_at().await.unwrap();
-
-        assert!(next_job_scheduled_at.is_none());
-    }
-
-    #[sqlx::test]
-    async fn next_job_scheduled_at_returns_none_when_no_future_jobs(pool: PgPool) {
-        let backend: RexecutorPgBackend = pool.into();
-        let id = backend.with_mock_job(Utc::now() - Duration::hours(3)).await;
-        backend.mark_job_complete(id).await.unwrap();
-
-        let next_job_scheduled_at = backend.next_job_scheduled_at().await.unwrap();
-
-        assert!(next_job_scheduled_at.is_none());
-    }
-
-    #[sqlx::test]
-    async fn next_job_scheduled_at_returns_timestamp_of_next_job_to_run(pool: PgPool) {
-        let backend: RexecutorPgBackend = pool.into();
-        let scheduled_at = Utc::now() + Duration::hours(1);
-        backend.with_mock_job(scheduled_at).await;
-        backend.with_mock_job(Utc::now() + Duration::hours(2)).await;
-        backend.with_mock_job(Utc::now() + Duration::hours(3)).await;
-
-        let next_job_scheduled_at = backend.next_job_scheduled_at().await.unwrap().unwrap();
-
-        assert_eq!(scheduled_at, next_job_scheduled_at);
-    }
-
-    #[sqlx::test]
-    async fn next_job_scheduled_at_returns_timestamp_of_next_job_to_run_even_when_in_past(
-        pool: PgPool,
-    ) {
-        let backend: RexecutorPgBackend = pool.into();
-        let scheduled_at = Utc::now() - Duration::hours(1);
-        backend.with_mock_job(scheduled_at).await;
-        backend.with_mock_job(Utc::now() + Duration::hours(2)).await;
-        backend.with_mock_job(Utc::now() + Duration::hours(3)).await;
-
-        let next_job_scheduled_at = backend.next_job_scheduled_at().await.unwrap().unwrap();
-
-        assert_eq!(scheduled_at, next_job_scheduled_at);
     }
 }

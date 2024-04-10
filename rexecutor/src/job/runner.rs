@@ -8,7 +8,7 @@ use crate::{
     executor::{ExecutionResult, Executor},
 };
 
-use super::{Job, JobId};
+use super::Job;
 
 pub(crate) struct JobRunner<B, E>
 where
@@ -30,16 +30,6 @@ where
         Self {
             backend,
             _executor: PhantomData,
-        }
-    }
-
-    pub async fn run(&self, job_id: JobId) {
-        tracing::debug!(%job_id, "Loading job for execution {job_id}");
-        match self.backend.lock_and_load::<E::Data>(job_id).await {
-            Ok(Some(job)) => self.execute_job(job).await,
-            Ok(None) => tracing::debug!("No job available to execute"),
-            // TODO handle error here mark for retry
-            Err(err) => tracing::error!(?err, "Failed to read job"),
         }
     }
 

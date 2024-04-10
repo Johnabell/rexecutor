@@ -1,26 +1,30 @@
-use async_trait::async_trait;
 use chrono::{DateTime, Utc};
+use futures::Stream;
 use serde::{de::DeserializeOwned, Serialize};
 use thiserror::Error;
 
 use crate::{
-    executor::ExecutorIdentifier,
+    executor::{Executor, ExecutorIdentifier},
     job::{Job, JobId},
 };
 
-#[async_trait]
 pub trait Backend: Clone {
-    async fn lock_and_load<D: Send + DeserializeOwned>(
-        &self,
-        id: JobId,
-    ) -> Result<Option<Job<D>>, BackendError>;
-    async fn ready_jobs(&self) -> Result<Vec<ReadyJob>, BackendError>;
-    async fn enqueue<D: Send + Serialize>(
+    fn subscribe_new_events<E>(
+        self,
+    ) -> impl std::future::Future<
+        Output = impl Stream<Item = Result<Job<E::Data>, BackendError>> + Send,
+    > + Send
+    where
+        E: Executor + Send,
+        E::Data: DeserializeOwned + Send;
+    fn enqueue<D: Send + Serialize>(
         &self,
         job: EnqueuableJob<D>,
-    ) -> Result<JobId, BackendError>;
-    async fn next_job_scheduled_at(&self) -> Result<Option<DateTime<Utc>>, BackendError>;
-    async fn mark_job_complete(&self, id: JobId) -> Result<(), BackendError>;
+    ) -> impl std::future::Future<Output = Result<JobId, BackendError>> + Send;
+    fn mark_job_complete(
+        &self,
+        id: JobId,
+    ) -> impl std::future::Future<Output = Result<(), BackendError>> + std::marker::Send;
 }
 
 // TODO: should this be non_exhaustive?
@@ -68,16 +72,15 @@ pub(crate) mod test {
         }
     }
 
-    #[async_trait]
     impl Backend for MockBackend {
-        async fn lock_and_load<D: Send + DeserializeOwned>(
-            &self,
-            _id: JobId,
-        ) -> Result<Option<Job<D>>, BackendError> {
-            Ok(None)
-        }
-        async fn ready_jobs(&self) -> Result<Vec<ReadyJob>, BackendError> {
-            Ok(vec![])
+        async fn subscribe_new_events<E>(
+            self,
+        ) -> impl Stream<Item = Result<Job<E::Data>, BackendError>>
+        where
+            E: Executor + Send,
+            E::Data: DeserializeOwned + Send,
+        {
+            futures::stream::empty()
         }
         async fn enqueue<D: Send + Serialize>(
             &self,
@@ -88,9 +91,6 @@ pub(crate) mod test {
                 .unwrap()
                 .pop()
                 .unwrap_or(Ok(0.into()))
-        }
-        async fn next_job_scheduled_at(&self) -> Result<Option<DateTime<Utc>>, BackendError> {
-            Ok(None)
         }
         async fn mark_job_complete(&self, _id: JobId) -> Result<(), BackendError> {
             Ok(())

@@ -30,7 +30,7 @@ where
             data: Default::default(),
             max_attempts: None,
             tags: Default::default(),
-            scheduled_at: Default::default(),
+            scheduled_at: Utc::now(),
         }
     }
 }
