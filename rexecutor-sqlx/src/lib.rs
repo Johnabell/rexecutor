@@ -9,7 +9,7 @@ use async_stream::stream;
 use chrono::{DateTime, Utc};
 use futures::Stream;
 use rexecutor::{
-    backend::{Backend, BackendError, EnqueuableJob},
+    backend::{Backend, BackendError, EnqueuableJob, ExecutionError},
     executor::Executor,
     job::JobId,
 };
@@ -92,6 +92,25 @@ impl Backend for RexecutorPgBackend {
     }
     async fn mark_job_complete(&self, id: JobId) -> Result<(), BackendError> {
         self._mark_job_complete(id)
+            .await
+            .map_err(|_| BackendError::BadStateError)
+    }
+    async fn mark_job_retryable(
+        &self,
+        id: JobId,
+        next_scheduled_at: DateTime<Utc>,
+        error: ExecutionError,
+    ) -> Result<(), BackendError> {
+        self._mark_job_retryable(id, next_scheduled_at, error)
+            .await
+            .map_err(|_| BackendError::BadStateError)
+    }
+    async fn mark_job_discarded(
+        &self,
+        id: JobId,
+        error: ExecutionError,
+    ) -> Result<(), BackendError> {
+        self._mark_job_discarded(id, error)
             .await
             .map_err(|_| BackendError::BadStateError)
     }
@@ -245,15 +264,17 @@ impl RexecutorPgBackend {
                 executor,
                 data,
                 max_attempts,
-                scheduled_at
-            ) VALUES ($1, $2, $3, $4)
+                scheduled_at,
+                tags
+            ) VALUES ($1, $2, $3, $4, $5)
             RETURNING id
             "#,
             job.executor,
             // TODO: unwrap
             serde_json::to_value(job.data).unwrap(),
             job.max_attempts as i32,
-            job.scheduled_at
+            job.scheduled_at,
+            &job.tags,
         )
         .fetch_one(self.deref())
         .await?;
@@ -262,8 +283,68 @@ impl RexecutorPgBackend {
 
     async fn _mark_job_complete(&self, id: JobId) -> sqlx::Result<()> {
         sqlx::query!(
-            "UPDATE rexecutor_jobs SET status = 'complete' WHERE id = $1",
+            r#"UPDATE rexecutor_jobs
+            SET
+                status = 'complete',
+                completed_at = timezone('UTC'::text, now())
+            WHERE id = $1"#,
             i32::from(id),
+        )
+        .execute(self.deref())
+        .await?;
+        Ok(())
+    }
+
+    async fn _mark_job_retryable(
+        &self,
+        id: JobId,
+        next_scheduled_at: DateTime<Utc>,
+        error: ExecutionError,
+    ) -> sqlx::Result<()> {
+        sqlx::query!(
+            r#"UPDATE rexecutor_jobs
+            SET
+                status = 'retryable',
+                scheduled_at = $4,
+                errors = ARRAY_APPEND(
+                    errors,
+                    jsonb_build_object(
+                        'attempt', attempt,
+                        'error_type', $2::text,
+                        'details', $3::text,
+                        'recorded_at', timezone('UTC'::text, now())::timestamptz
+                    )
+                )
+            WHERE id = $1"#,
+            i32::from(id),
+            error.error_type,
+            error.message,
+            next_scheduled_at,
+        )
+        .execute(self.deref())
+        .await?;
+        Ok(())
+    }
+
+    async fn _mark_job_discarded(&self, id: JobId, error: ExecutionError) -> sqlx::Result<()> {
+        sqlx::query!(
+            r#"UPDATE rexecutor_jobs
+            SET
+                status = 'discarded',
+                discarded_at = timezone('UTC'::text, now()),
+                errors = ARRAY_APPEND(
+                    errors,
+                    jsonb_build_object(
+                        'attempt', attempt,
+                        'error_type', $2::text,
+                        'details', $3::text,
+                        'recorded_at', timezone('UTC'::text, now())::timestamptz
+                    )
+                )
+            WHERE id = $1"#,
+            i32::from(id),
+            error.error_type,
+            error.message,
         )
         .execute(self.deref())
         .await?;
@@ -337,6 +418,7 @@ mod test {
                 data: "data".to_owned(),
                 max_attempts: 5,
                 scheduled_at,
+                tags: Default::default(),
             };
 
             self.enqueue(job).await.unwrap()
@@ -421,6 +503,7 @@ mod test {
             data: "data".to_owned(),
             max_attempts: 5,
             scheduled_at: Utc::now(),
+            tags: Default::default(),
         };
 
         let result = backend.enqueue(job).await;

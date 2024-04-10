@@ -75,7 +75,7 @@ where
     }
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Debug)]
 pub struct JobError {
     pub attempt: u16,
     pub error_type: String,

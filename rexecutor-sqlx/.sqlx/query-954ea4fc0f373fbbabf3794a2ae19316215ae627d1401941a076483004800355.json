@@ -1,0 +1,17 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE rexecutor_jobs\n            SET\n                status = 'retryable',\n                scheduled_at = $4,\n                errors = ARRAY_APPEND(\n                    errors,\n                    jsonb_build_object(\n                        'attempt', attempt,\n                        'error_type', $2::text,\n                        'details', $3::text,\n                        'recorded_at', timezone('UTC'::text, now())::timestamptz\n                    )\n                )\n            WHERE id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int4",
+        "Text",
+        "Text",
+        "Timestamptz"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "954ea4fc0f373fbbabf3794a2ae19316215ae627d1401941a076483004800355"
+}

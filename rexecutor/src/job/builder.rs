@@ -93,6 +93,7 @@ where
                 executor: E::NAME.to_owned(),
                 max_attempts: self.max_attempts.unwrap_or(E::MAX_ATTEMPTS),
                 scheduled_at: self.scheduled_at,
+                tags: self.tags,
             })
             .await?;
 
@@ -115,7 +116,7 @@ mod tests {
         let mut backend = MockBackend::default();
         backend.expect_enqueue_returning(Ok(expected_job_id));
 
-        let job_id = JobBuilder::<SimpleExecutor>::default()
+        let job_id = SimpleExecutor::builder()
             .with_max_attempts(2)
             .with_tags(vec!["initial_job"])
             .with_data("First job".into())

@@ -44,6 +44,12 @@ pub struct Job<E> {
     pub discarded_at: Option<DateTime<Utc>>,
 }
 
+impl<E> Job<E> {
+    pub(crate) fn is_final_attempt(&self) -> bool {
+        self.attempt == self.max_attempts
+    }
+}
+
 pub enum JobStatus {
     Complete,
     Executing,
@@ -53,6 +59,7 @@ pub enum JobStatus {
     Discarded,
 }
 
+#[derive(Debug)]
 pub struct JobError {
     pub attempt: u16,
     pub error_type: String,

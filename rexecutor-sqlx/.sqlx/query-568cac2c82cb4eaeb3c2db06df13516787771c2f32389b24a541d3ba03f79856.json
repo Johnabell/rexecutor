@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE rexecutor_jobs\n            SET\n                status = 'complete',\n                completed_at = timezone('UTC'::text, now())\n            WHERE id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int4"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "568cac2c82cb4eaeb3c2db06df13516787771c2f32389b24a541d3ba03f79856"
+}

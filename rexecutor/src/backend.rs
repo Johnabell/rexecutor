@@ -4,7 +4,7 @@ use serde::{de::DeserializeOwned, Serialize};
 use thiserror::Error;
 
 use crate::{
-    executor::{Executor, ExecutorIdentifier},
+    executor::{self, Executor, ExecutorIdentifier},
     job::{Job, JobId},
 };
 
@@ -25,6 +25,35 @@ pub trait Backend: Clone {
         &self,
         id: JobId,
     ) -> impl std::future::Future<Output = Result<(), BackendError>> + std::marker::Send;
+    fn mark_job_retryable(
+        &self,
+        id: JobId,
+        next_scheduled_at: DateTime<Utc>,
+        error: ExecutionError,
+    ) -> impl std::future::Future<Output = Result<(), BackendError>> + std::marker::Send;
+    fn mark_job_discarded(
+        &self,
+        id: JobId,
+        error: ExecutionError,
+    ) -> impl std::future::Future<Output = Result<(), BackendError>> + std::marker::Send;
+}
+
+#[derive(Debug)]
+pub struct ExecutionError {
+    pub error_type: &'static str,
+    pub message: String,
+}
+
+impl<T> From<T> for ExecutionError
+where
+    T: executor::ExecutionError,
+{
+    fn from(value: T) -> Self {
+        Self {
+            error_type: value.error_type(),
+            message: value.to_string(),
+        }
+    }
 }
 
 // TODO: should this be non_exhaustive?
@@ -34,6 +63,7 @@ pub struct EnqueuableJob<E> {
     pub data: E,
     pub max_attempts: u16,
     pub scheduled_at: DateTime<Utc>,
+    pub tags: Vec<String>,
 }
 
 #[derive(Debug, Error)]
@@ -93,6 +123,21 @@ pub(crate) mod test {
                 .unwrap_or(Ok(0.into()))
         }
         async fn mark_job_complete(&self, _id: JobId) -> Result<(), BackendError> {
+            Ok(())
+        }
+        async fn mark_job_retryable(
+            &self,
+            _id: JobId,
+            _next_scheduled_at: DateTime<Utc>,
+            _error: ExecutionError,
+        ) -> Result<(), BackendError> {
+            Ok(())
+        }
+        async fn mark_job_discarded(
+            &self,
+            _id: JobId,
+            _error: ExecutionError,
+        ) -> Result<(), BackendError> {
             Ok(())
         }
     }

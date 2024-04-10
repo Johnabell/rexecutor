@@ -1,8 +1,9 @@
 use async_trait::async_trait;
 use chrono::Duration;
+use serde::{de::DeserializeOwned, Serialize};
 use std::{error::Error, fmt::Display};
 
-use crate::job::Job;
+use crate::job::{builder::JobBuilder, Job};
 
 #[async_trait]
 pub trait Executor {
@@ -14,13 +15,21 @@ pub trait Executor {
     async fn execute(job: Job<Self::Data>) -> ExecutionResult;
 
     // TODO: make module for different backoff strategies
-    fn backoff(job: Job<Self::Data>) -> Duration {
+    fn backoff(job: &Job<Self::Data>) -> Duration {
         Duration::seconds(10 * job.attempt as i64 + 1)
     }
 
     // TODO: make Option
     fn timeout(_job: &Job<Self::Data>) -> std::time::Duration {
         std::time::Duration::from_secs(3000)
+    }
+
+    fn builder() -> JobBuilder<Self>
+    where
+        Self: Sized,
+        Self::Data: Serialize + DeserializeOwned,
+    {
+        Default::default()
     }
 }
 
@@ -46,6 +55,17 @@ pub enum ExecutionResult {
     Cancelled { reason: Box<dyn CancellationReason> },
     Snooze { delay: Duration },
     Error { error: Box<dyn ExecutionError> },
+}
+
+impl<T> From<T> for ExecutionResult
+where
+    T: ExecutionError + 'static,
+{
+    fn from(value: T) -> Self {
+        Self::Error {
+            error: Box::new(value),
+        }
+    }
 }
 
 pub trait ExecutionError: Error + Send {
