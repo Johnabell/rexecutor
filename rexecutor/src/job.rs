@@ -62,7 +62,15 @@ pub enum JobStatus {
 #[derive(Debug)]
 pub struct JobError {
     pub attempt: u16,
-    pub error_type: String,
+    pub error_type: ErrorType,
     pub details: String,
     pub recorded_at: DateTime<Utc>,
+}
+
+#[derive(Debug)]
+pub enum ErrorType {
+    Panic,
+    Timeout,
+    Cancelled,
+    Other(String),
 }

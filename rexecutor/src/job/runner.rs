@@ -10,10 +10,7 @@ use crate::{
     executor::{ExecutionError, ExecutionResult, Executor},
 };
 
-use super::{Job, JobId};
-
-const ERROR_TYPE_PANIC: &'static str = "panic";
-const ERROR_TYPE_TIMEOUT: &'static str = "timeout";
+use super::{ErrorType, Job, JobId};
 
 pub(crate) struct JobRunner<B, E>
 where
@@ -106,7 +103,7 @@ where
             tracing::error!(
                 %job_id,
                 ?error,
-                "Job {job_id} failed and will be discarded: error type: {}, message: {}",
+                "Job {job_id} failed and will be discarded: error type: {:?}, message: {}",
                 error.error_type,
                 error.message
             );
@@ -122,10 +119,11 @@ where
                     )
                 });
         } else {
+            let next_scheduled_at = Utc::now() + delay;
             tracing::warn!(
                 %job_id,
                 ?error,
-                "Job {job_id} failed and will be retried in {delay}: error type: {}, message: {}",
+                "Job {job_id} failed and will be retried at {next_scheduled_at}: error type: {:?}, message: {}",
                 error.error_type,
                 error.message
             );
@@ -156,7 +154,7 @@ impl From<JoinError> for crate::backend::ExecutionError {
             Err(_) => msg,
         };
         Self {
-            error_type: ERROR_TYPE_PANIC,
+            error_type: ErrorType::Panic,
             message,
         }
     }
@@ -165,7 +163,7 @@ impl From<JoinError> for crate::backend::ExecutionError {
 impl From<Box<dyn ExecutionError>> for crate::backend::ExecutionError {
     fn from(value: Box<dyn ExecutionError>) -> Self {
         Self {
-            error_type: value.error_type(),
+            error_type: ErrorType::Other(value.error_type().to_string()),
             message: value.to_string(),
         }
     }
@@ -174,7 +172,7 @@ impl From<Box<dyn ExecutionError>> for crate::backend::ExecutionError {
 impl From<Duration> for crate::backend::ExecutionError {
     fn from(value: Duration) -> Self {
         Self {
-            error_type: ERROR_TYPE_TIMEOUT,
+            error_type: ErrorType::Timeout,
             message: format!("Job failed to complete within timeout: {value:?}"),
         }
     }

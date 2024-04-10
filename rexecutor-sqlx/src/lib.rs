@@ -14,7 +14,7 @@ use rexecutor::{
     job::JobId,
 };
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
-use sqlx::{postgres::PgListener, PgPool};
+use sqlx::{postgres::PgListener, types::Text, PgPool};
 use tokio::sync::{mpsc, RwLock};
 
 mod types;
@@ -317,7 +317,7 @@ impl RexecutorPgBackend {
                 )
             WHERE id = $1"#,
             i32::from(id),
-            error.error_type,
+            Text(ErrorType::from(error.error_type)) as _,
             error.message,
             next_scheduled_at,
         )
@@ -343,7 +343,7 @@ impl RexecutorPgBackend {
                 )
             WHERE id = $1"#,
             i32::from(id),
-            error.error_type,
+            Text(ErrorType::from(error.error_type)) as _,
             error.message,
         )
         .execute(self.deref())

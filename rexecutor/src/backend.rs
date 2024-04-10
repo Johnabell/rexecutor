@@ -4,8 +4,8 @@ use serde::{de::DeserializeOwned, Serialize};
 use thiserror::Error;
 
 use crate::{
-    executor::{self, Executor, ExecutorIdentifier},
-    job::{Job, JobId},
+    executor::{Executor, ExecutorIdentifier},
+    job::{ErrorType, Job, JobId},
 };
 
 pub trait Backend: Clone {
@@ -40,20 +40,8 @@ pub trait Backend: Clone {
 
 #[derive(Debug)]
 pub struct ExecutionError {
-    pub error_type: &'static str,
+    pub error_type: ErrorType,
     pub message: String,
-}
-
-impl<T> From<T> for ExecutionError
-where
-    T: executor::ExecutionError,
-{
-    fn from(value: T) -> Self {
-        Self {
-            error_type: value.error_type(),
-            message: value.to_string(),
-        }
-    }
 }
 
 // TODO: should this be non_exhaustive?

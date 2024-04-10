@@ -1,3 +1,5 @@
+use std::fmt::Display;
+
 use chrono::{DateTime, Utc};
 use rexecutor::backend::BackendError;
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
@@ -78,18 +80,62 @@ where
 #[derive(Deserialize, Debug)]
 pub struct JobError {
     pub attempt: u16,
-    pub error_type: String,
+    pub error_type: ErrorType,
     pub details: String,
     pub recorded_at: DateTime<Utc>,
+}
+
+#[derive(Deserialize, Debug)]
+#[serde(rename_all = "snake_case")]
+pub enum ErrorType {
+    Panic,
+    Timeout,
+    Cancelled,
+    #[serde(untagged)]
+    Other(String),
+}
+
+impl Display for ErrorType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let val = match self {
+            ErrorType::Panic => "panic",
+            ErrorType::Timeout => "timeout",
+            ErrorType::Cancelled => "cancelled",
+            ErrorType::Other(val) => val,
+        };
+        write!(f, "{val}")
+    }
 }
 
 impl From<JobError> for rexecutor::job::JobError {
     fn from(value: JobError) -> Self {
         Self {
             attempt: value.attempt,
-            error_type: value.error_type,
+            error_type: value.error_type.into(),
             details: value.details,
             recorded_at: value.recorded_at,
+        }
+    }
+}
+
+impl From<ErrorType> for rexecutor::job::ErrorType {
+    fn from(value: ErrorType) -> Self {
+        match value {
+            ErrorType::Panic => Self::Panic,
+            ErrorType::Timeout => Self::Timeout,
+            ErrorType::Cancelled => Self::Cancelled,
+            ErrorType::Other(other) => Self::Other(other),
+        }
+    }
+}
+
+impl From<rexecutor::job::ErrorType> for ErrorType {
+    fn from(value: rexecutor::job::ErrorType) -> Self {
+        match value {
+            rexecutor::job::ErrorType::Panic => Self::Panic,
+            rexecutor::job::ErrorType::Timeout => Self::Timeout,
+            rexecutor::job::ErrorType::Cancelled => Self::Cancelled,
+            rexecutor::job::ErrorType::Other(other) => Self::Other(other),
         }
     }
 }
