@@ -1,0 +1,16 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE rexecutor_jobs\n            SET\n                status = 'cancelled',\n                cancelled_at = timezone('UTC'::text, now()),\n                errors = ARRAY_APPEND(\n                    errors,\n                    jsonb_build_object(\n                        'attempt', attempt,\n                        'error_type', $2::text,\n                        'details', $3::text,\n                        'recorded_at', timezone('UTC'::text, now())::timestamptz\n                    )\n                )\n            WHERE id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int4",
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "1ec1c08c6e9c4f31a2ed044fa6adc48fca7be5dc41dc6be1033d986dcc0c1ce2"
+}

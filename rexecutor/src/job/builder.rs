@@ -1,7 +1,6 @@
 use crate::{
     backend::{Backend, EnqueuableJob},
     executor::Executor,
-    notifier::{InProcessNotifier, Notifier},
     RexecuterError,
 };
 use chrono::{DateTime, Duration, Utc};
@@ -65,9 +64,9 @@ where
             ..self
         }
     }
-    pub fn add_tag(self, tag: String) -> Self {
+    pub fn add_tag(self, tag: impl Into<String>) -> Self {
         let mut tags = self.tags;
-        tags.push(tag);
+        tags.push(tag.into());
         Self { tags, ..self }
     }
     pub fn with_tags(self, tags: Vec<impl Into<String>>) -> Self {
@@ -96,8 +95,6 @@ where
                 tags: self.tags,
             })
             .await?;
-
-        InProcessNotifier::notify(E::NAME);
 
         Ok(job_id)
     }

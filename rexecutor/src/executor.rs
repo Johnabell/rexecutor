@@ -74,6 +74,8 @@ pub trait ExecutionError: Error + Send {
 
 pub trait CancellationReason: Display + Send {}
 
+impl<T> CancellationReason for T where T: Display + Send {}
+
 #[cfg(test)]
 pub(crate) mod test {
     use async_trait::async_trait;

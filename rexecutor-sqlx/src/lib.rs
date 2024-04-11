@@ -19,10 +19,12 @@ use tokio::sync::{mpsc, RwLock};
 
 mod types;
 
+type Subscriber = mpsc::UnboundedSender<DateTime<Utc>>;
+
 #[derive(Clone, Debug)]
 pub struct RexecutorPgBackend {
     pool: PgPool,
-    subscribers: Arc<RwLock<HashMap<&'static str, Vec<mpsc::UnboundedSender<DateTime<Utc>>>>>>,
+    subscribers: Arc<RwLock<HashMap<&'static str, Vec<Subscriber>>>>,
 }
 
 pub struct RexecutorPgBackendRef<'a>(&'a PgPool);
@@ -114,6 +116,15 @@ impl Backend for RexecutorPgBackend {
             .await
             .map_err(|_| BackendError::BadStateError)
     }
+    async fn mark_job_cancelled(
+        &self,
+        id: JobId,
+        error: ExecutionError,
+    ) -> Result<(), BackendError> {
+        self._mark_job_cancelled(id, error)
+            .await
+            .map_err(|_| BackendError::BadStateError)
+    }
 }
 
 #[derive(Deserialize, Debug)]
@@ -136,7 +147,7 @@ where
     E: Executor,
     E::Data: DeserializeOwned,
 {
-    const DEFAULT_DELAY: std::time::Duration = std::time::Duration::from_secs(5);
+    const DEFAULT_DELAY: std::time::Duration = std::time::Duration::from_secs(30);
     const DELTA: std::time::Duration = std::time::Duration::from_millis(10);
 
     pub async fn next(&mut self) -> Result<rexecutor::job::Job<E::Data>, BackendError> {
@@ -197,15 +208,18 @@ impl RexecutorPgBackend {
                     let notification =
                         serde_json::from_str::<Notification>(notification.payload()).unwrap();
 
-                    subscribers
+                    match subscribers
                         .read()
                         .await
                         .get(&notification.executor.as_str())
-                        .into_iter()
-                        .flatten()
-                        .for_each(|sender| {
+                    {
+                        Some(subscribers) => subscribers.iter().for_each(|sender| {
                             let _ = sender.send(notification.scheduled_at);
-                        });
+                        }),
+                        None => {
+                            tracing::warn!("No executors running for {}", notification.executor)
+                        }
+                    }
                 }
             }
         });
@@ -351,32 +365,25 @@ impl RexecutorPgBackend {
         Ok(())
     }
 
-    async fn update_job(&self, job: Job) -> sqlx::Result<()> {
+    async fn _mark_job_cancelled(&self, id: JobId, error: ExecutionError) -> sqlx::Result<()> {
         sqlx::query!(
-            r#"UPDATE rexecutor_jobs SET
-                status = $2,
-                data = $3,
-                attempt = $4,
-                max_attempts = $5,
-                errors = $6,
-                scheduled_at = $7,
-                attempted_at = $8,
-                completed_at = $9,
-                cancelled_at = $10,
-                discarded_at = $11
-            WHERE id = $1
-            "#,
-            job.id,
-            job.status as _,
-            job.data,
-            job.attempt,
-            job.max_attempts,
-            &job.errors,
-            job.scheduled_at,
-            job.attempted_at,
-            job.completed_at,
-            job.cancelled_at,
-            job.discarded_at,
+            r#"UPDATE rexecutor_jobs
+            SET
+                status = 'cancelled',
+                cancelled_at = timezone('UTC'::text, now()),
+                errors = ARRAY_APPEND(
+                    errors,
+                    jsonb_build_object(
+                        'attempt', attempt,
+                        'error_type', $2::text,
+                        'details', $3::text,
+                        'recorded_at', timezone('UTC'::text, now())::timestamptz
+                    )
+                )
+            WHERE id = $1"#,
+            i32::from(id),
+            Text(ErrorType::from(error.error_type)) as _,
+            error.message,
         )
         .execute(self.deref())
         .await?;

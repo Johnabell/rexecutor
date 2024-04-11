@@ -36,6 +36,11 @@ pub trait Backend: Clone {
         id: JobId,
         error: ExecutionError,
     ) -> impl std::future::Future<Output = Result<(), BackendError>> + std::marker::Send;
+    fn mark_job_cancelled(
+        &self,
+        id: JobId,
+        error: ExecutionError,
+    ) -> impl std::future::Future<Output = Result<(), BackendError>> + std::marker::Send;
 }
 
 #[derive(Debug)]
@@ -122,6 +127,13 @@ pub(crate) mod test {
             Ok(())
         }
         async fn mark_job_discarded(
+            &self,
+            _id: JobId,
+            _error: ExecutionError,
+        ) -> Result<(), BackendError> {
+            Ok(())
+        }
+        async fn mark_job_cancelled(
             &self,
             _id: JobId,
             _error: ExecutionError,

@@ -7,7 +7,7 @@ use tracing::{instrument, Instrument};
 
 use crate::{
     backend::Backend,
-    executor::{ExecutionError, ExecutionResult, Executor},
+    executor::{CancellationReason, ExecutionError, ExecutionResult, Executor},
 };
 
 use super::{ErrorType, Job, JobId};
@@ -55,8 +55,8 @@ where
 
         match result.await {
             Ok(Ok(ExecutionResult::Done)) => self.handle_job_complete(job_id).await,
-            Ok(Ok(ExecutionResult::Cancelled { .. })) => {
-                todo!("Mark job as cancelled")
+            Ok(Ok(ExecutionResult::Cancelled { reason })) => {
+                self.handle_job_cancelled(job_id, reason).await
             }
             Ok(Ok(ExecutionResult::Snooze { .. })) => {
                 todo!("Snooze job")
@@ -77,7 +77,7 @@ where
     }
 
     async fn handle_job_complete(&self, job_id: JobId) {
-        tracing::debug!(%job_id, "Job complete {job_id}");
+        tracing::info!(%job_id, "Job complete {job_id}");
         let _ = self
             .backend
             .mark_job_complete(job_id)
@@ -87,6 +87,32 @@ where
                     ?err,
                     %job_id,
                     "Failed to mark job {job_id} as complete, error: {err:?}",
+                )
+            });
+    }
+
+    async fn handle_job_cancelled(
+        &self,
+        job_id: JobId,
+        error: impl Into<crate::backend::ExecutionError>,
+    ) {
+        let error = error.into();
+        tracing::info!(
+            %job_id,
+            ?error,
+            "Job {job_id} failed and will be discarded: error type: {:?}, message: {}",
+            error.error_type,
+            error.message
+        );
+        let _ = self
+            .backend
+            .mark_job_cancelled(job_id, error)
+            .await
+            .inspect_err(|err| {
+                tracing::error!(
+                    ?err,
+                    %job_id,
+                    "Failed to mark job {job_id} as discarded, error: {err:?}",
                 )
             });
     }
@@ -164,6 +190,15 @@ impl From<Box<dyn ExecutionError>> for crate::backend::ExecutionError {
     fn from(value: Box<dyn ExecutionError>) -> Self {
         Self {
             error_type: ErrorType::Other(value.error_type().to_string()),
+            message: value.to_string(),
+        }
+    }
+}
+
+impl From<Box<dyn CancellationReason>> for crate::backend::ExecutionError {
+    fn from(value: Box<dyn CancellationReason>) -> Self {
+        Self {
+            error_type: ErrorType::Cancelled,
             message: value.to_string(),
         }
     }

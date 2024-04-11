@@ -24,9 +24,10 @@ pub async fn main() {
     let pool = PgPoolOptions::new().connect(&db_url).await.unwrap();
     let backend = RexecutorPgBackend::new(pool).await.unwrap();
     // Might be nice to make this be able to take a PgPool directly
-    let mut _handle = Rexecuter::new(backend.clone())
+    let handle = Rexecuter::new(backend.clone())
         .with_executor::<BasicJob>()
         .with_executor::<TimeoutJob>()
+        .with_executor::<CancelledJob>()
         .with_executor::<FlakyJob>();
 
     let job_id = BasicJob::builder()
@@ -42,7 +43,8 @@ pub async fn main() {
 
     let job_id = BasicJob::builder()
         .with_max_attempts(2)
-        .with_tags(vec!["second_job"])
+        .add_tag("second_job")
+        .add_tag("running_again")
         .with_data("Second job".into())
         .enqueue(&backend)
         .await
@@ -67,13 +69,21 @@ pub async fn main() {
     println!("Inserted job {job_id}");
 
     let job_id = TimeoutJob::builder()
-        .with_data("Timeout job".into())
+        .with_data(15)
+        .enqueue(&backend)
+        .await
+        .unwrap();
+    println!("Inserted job {job_id}");
+
+    let job_id = CancelledJob::builder()
         .enqueue(&backend)
         .await
         .unwrap();
     println!("Inserted job {job_id}");
 
     tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+
+    let _ = handle.graceful_shutdown().await;
 }
 
 struct BasicJob;
@@ -130,12 +140,12 @@ struct TimeoutJob;
 
 #[async_trait]
 impl Executor for TimeoutJob {
-    type Data = String;
+    type Data = u64;
     const NAME: &'static str = "timeout_job";
     const MAX_ATTEMPTS: u16 = 3;
     async fn execute(job: Job<Self::Data>) -> ExecutionResult {
         println!("{} running, with args: {}", Self::NAME, job.data);
-        tokio::time::sleep(Duration::from_millis(15)).await;
+        tokio::time::sleep(Duration::from_millis(job.data)).await;
         ExecutionResult::Done
     }
 
@@ -145,5 +155,20 @@ impl Executor for TimeoutJob {
 
     fn timeout(job: &Job<Self::Data>) -> Duration {
         Duration::from_millis(10 * job.attempt as u64)
+    }
+}
+
+struct CancelledJob;
+
+#[async_trait]
+impl Executor for CancelledJob {
+    type Data = ();
+    const NAME: &'static str = "cancel_job";
+    const MAX_ATTEMPTS: u16 = 1;
+    async fn execute(job: Job<Self::Data>) -> ExecutionResult {
+        println!("{} running, with args: {:?}", Self::NAME, job.data);
+        ExecutionResult::Cancelled {
+            reason: Box::new("Didn't like the job"),
+        }
     }
 }
