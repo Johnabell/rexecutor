@@ -41,6 +41,11 @@ pub trait Backend: Clone {
         id: JobId,
         error: ExecutionError,
     ) -> impl std::future::Future<Output = Result<(), BackendError>> + std::marker::Send;
+    fn mark_job_snoozed(
+        &self,
+        id: JobId,
+        next_scheduled_at: DateTime<Utc>,
+    ) -> impl std::future::Future<Output = Result<(), BackendError>> + std::marker::Send;
 }
 
 #[derive(Debug)]
@@ -137,6 +142,13 @@ pub(crate) mod test {
             &self,
             _id: JobId,
             _error: ExecutionError,
+        ) -> Result<(), BackendError> {
+            Ok(())
+        }
+        async fn mark_job_snoozed(
+            &self,
+            _id: JobId,
+            _next_scheduled_at: DateTime<Utc>,
         ) -> Result<(), BackendError> {
             Ok(())
         }

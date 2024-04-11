@@ -125,6 +125,15 @@ impl Backend for RexecutorPgBackend {
             .await
             .map_err(|_| BackendError::BadStateError)
     }
+    async fn mark_job_snoozed(
+        &self,
+        id: JobId,
+        next_scheduled_at: DateTime<Utc>,
+    ) -> Result<(), BackendError> {
+        self._mark_job_snoozed(id, next_scheduled_at)
+            .await
+            .map_err(|_| BackendError::BadStateError)
+    }
 }
 
 #[derive(Deserialize, Debug)]
@@ -333,6 +342,26 @@ impl RexecutorPgBackend {
             i32::from(id),
             Text(ErrorType::from(error.error_type)) as _,
             error.message,
+            next_scheduled_at,
+        )
+        .execute(self.deref())
+        .await?;
+        Ok(())
+    }
+
+    async fn _mark_job_snoozed(
+        &self,
+        id: JobId,
+        next_scheduled_at: DateTime<Utc>,
+    ) -> sqlx::Result<()> {
+        sqlx::query!(
+            r#"UPDATE rexecutor_jobs
+            SET
+                status = (CASE WHEN attempt = 1 THEN 'scheduled' ELSE 'retryable' END)::rexecutor_job_state,
+                scheduled_at = $2,
+                attempt = attempt - 1
+            WHERE id = $1"#,
+            i32::from(id),
             next_scheduled_at,
         )
         .execute(self.deref())

@@ -58,8 +58,8 @@ where
             Ok(Ok(ExecutionResult::Cancelled { reason })) => {
                 self.handle_job_cancelled(job_id, reason).await
             }
-            Ok(Ok(ExecutionResult::Snooze { .. })) => {
-                todo!("Snooze job")
+            Ok(Ok(ExecutionResult::Snooze { delay })) => {
+                self.handle_job_snoozed(job_id, delay).await
             }
             Ok(Ok(ExecutionResult::Error { error })) => {
                 self.handle_job_error(is_final_attempt, job_id, delay, error)
@@ -77,7 +77,7 @@ where
     }
 
     async fn handle_job_complete(&self, job_id: JobId) {
-        tracing::info!(%job_id, "Job complete {job_id}");
+        tracing::info!(%job_id, "Job {job_id} complete");
         let _ = self
             .backend
             .mark_job_complete(job_id)
@@ -87,6 +87,22 @@ where
                     ?err,
                     %job_id,
                     "Failed to mark job {job_id} as complete, error: {err:?}",
+                )
+            });
+    }
+
+    async fn handle_job_snoozed(&self, job_id: JobId, delay: TimeDelta) {
+        let next_scheduled_at = Utc::now() + delay;
+        tracing::info!(%job_id, "Job {job_id} snoozed until {next_scheduled_at}");
+        let _ = self
+            .backend
+            .mark_job_snoozed(job_id, next_scheduled_at)
+            .await
+            .inspect_err(|err| {
+                tracing::error!(
+                    ?err,
+                    %job_id,
+                    "Failed to snooze job {job_id}, error: {err:?}",
                 )
             });
     }

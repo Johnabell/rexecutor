@@ -28,6 +28,7 @@ pub async fn main() {
         .with_executor::<BasicJob>()
         .with_executor::<TimeoutJob>()
         .with_executor::<CancelledJob>()
+        .with_executor::<SnoozeJob>()
         .with_executor::<FlakyJob>();
 
     let job_id = BasicJob::builder()
@@ -75,10 +76,10 @@ pub async fn main() {
         .unwrap();
     println!("Inserted job {job_id}");
 
-    let job_id = CancelledJob::builder()
-        .enqueue(&backend)
-        .await
-        .unwrap();
+    let job_id = CancelledJob::builder().enqueue(&backend).await.unwrap();
+    println!("Inserted job {job_id}");
+
+    let job_id = SnoozeJob::builder().enqueue(&backend).await.unwrap();
     println!("Inserted job {job_id}");
 
     tokio::time::sleep(std::time::Duration::from_secs(5)).await;
@@ -169,6 +170,25 @@ impl Executor for CancelledJob {
         println!("{} running, with args: {:?}", Self::NAME, job.data);
         ExecutionResult::Cancelled {
             reason: Box::new("Didn't like the job"),
+        }
+    }
+}
+
+struct SnoozeJob;
+
+#[async_trait]
+impl Executor for SnoozeJob {
+    type Data = ();
+    const NAME: &'static str = "snooze_job";
+    const MAX_ATTEMPTS: u16 = 1;
+    async fn execute(job: Job<Self::Data>) -> ExecutionResult {
+        println!("{} running, with args: {:?}", Self::NAME, job.data);
+        if (job.scheduled_at - job.inserted_at).num_seconds() < 1 {
+            ExecutionResult::Snooze {
+                delay: TimeDelta::seconds(1),
+            }
+        } else {
+            ExecutionResult::Done
         }
     }
 }
