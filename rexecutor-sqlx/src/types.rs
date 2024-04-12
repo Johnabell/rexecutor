@@ -2,7 +2,7 @@ use std::fmt::Display;
 
 use chrono::{DateTime, Utc};
 use rexecutor::backend::BackendError;
-use serde::{de::DeserializeOwned, Deserialize, Serialize};
+use serde::{Deserialize, Serialize};
 
 #[derive(sqlx::Type, Debug, Clone, Copy, Serialize)]
 #[cfg_attr(test, derive(PartialEq))]
@@ -46,22 +46,19 @@ pub(crate) struct Job {
     pub discarded_at: Option<DateTime<Utc>>,
 }
 
-impl<D> TryFrom<Job> for rexecutor::job::Job<D>
-where
-    D: DeserializeOwned,
-{
+impl TryFrom<Job> for rexecutor::backend::Job {
     type Error = BackendError;
 
     fn try_from(value: Job) -> Result<Self, Self::Error> {
         let data = serde_json::from_value(value.data)?;
         Ok(Self {
-            id: value.id.into(),
+            id: value.id,
             status: value.status.into(),
             executor: value.executor,
             data,
-            attempt: value.attempt.try_into().unwrap(),
+            attempt: value.attempt,
             attempted_at: value.attempted_at,
-            max_attempts: value.max_attempts.try_into().unwrap(),
+            max_attempts: value.max_attempts,
             errors: value
                 .errors
                 .into_iter()

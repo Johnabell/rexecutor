@@ -34,11 +34,17 @@ pub trait Executor {
 }
 
 #[derive(Debug, Eq, PartialEq, Clone, Hash)]
-pub struct ExecutorIdentifier(String);
+pub struct ExecutorIdentifier(&'static str);
 
-impl From<String> for ExecutorIdentifier {
-    fn from(value: String) -> Self {
+impl From<&'static str> for ExecutorIdentifier {
+    fn from(value: &'static str) -> Self {
         Self(value)
+    }
+}
+
+impl ExecutorIdentifier {
+    pub fn as_str(&self) -> &'static str {
+        self.0
     }
 }
 
@@ -46,7 +52,7 @@ impl std::ops::Deref for ExecutorIdentifier {
     type Target = str;
 
     fn deref(&self) -> &Self::Target {
-        &self.0
+        self.0
     }
 }
 

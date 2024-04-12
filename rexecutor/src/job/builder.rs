@@ -1,7 +1,7 @@
 use crate::{
     backend::{Backend, EnqueuableJob},
     executor::Executor,
-    RexecuterError,
+    RexecuterError, GLOBAL_BACKEND,
 };
 use chrono::{DateTime, Duration, Utc};
 use serde::{de::DeserializeOwned, Serialize};
@@ -82,13 +82,32 @@ where
         self
     }
 
-    pub async fn enqueue<B: Backend>(self, backend: &B) -> Result<JobId, RexecuterError>
+    pub async fn enqueue(self) -> Result<JobId, RexecuterError>
+    where
+        E::Data: 'static + Send,
+    {
+        let job_id = GLOBAL_BACKEND
+            .get()
+            .ok_or(RexecuterError::GlobalBackend)?
+            .enqueue(EnqueuableJob {
+                data: serde_json::to_value(self.data)?,
+                executor: E::NAME.to_owned(),
+                max_attempts: self.max_attempts.unwrap_or(E::MAX_ATTEMPTS),
+                scheduled_at: self.scheduled_at,
+                tags: self.tags,
+            })
+            .await?;
+
+        Ok(job_id)
+    }
+
+    pub async fn enqueue_to_backend<B: Backend>(self, backend: &B) -> Result<JobId, RexecuterError>
     where
         E::Data: 'static + Send,
     {
         let job_id = backend
             .enqueue(EnqueuableJob {
-                data: self.data,
+                data: serde_json::to_value(self.data)?,
                 executor: E::NAME.to_owned(),
                 max_attempts: self.max_attempts.unwrap_or(E::MAX_ATTEMPTS),
                 scheduled_at: self.scheduled_at,
@@ -118,7 +137,7 @@ mod tests {
             .with_tags(vec!["initial_job"])
             .with_data("First job".into())
             .schedule_in(Duration::hours(2))
-            .enqueue(&backend)
+            .enqueue_to_backend(&backend)
             .await
             .unwrap();
 

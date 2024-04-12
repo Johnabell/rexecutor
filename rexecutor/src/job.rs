@@ -1,6 +1,9 @@
 use std::fmt::Display;
 
 use chrono::{DateTime, Utc};
+use serde::de::DeserializeOwned;
+
+use crate::backend;
 
 pub mod builder;
 pub(crate) mod runner;
@@ -44,12 +47,39 @@ pub struct Job<E> {
     pub discarded_at: Option<DateTime<Utc>>,
 }
 
+impl<E> TryFrom<backend::Job> for Job<E>
+where
+    E: DeserializeOwned,
+{
+    type Error = serde_json::Error;
+
+    fn try_from(value: backend::Job) -> Result<Self, Self::Error> {
+        let data = serde_json::from_value(value.data)?;
+        Ok(Self {
+            id: value.id.into(),
+            status: value.status,
+            executor: value.executor,
+            data,
+            attempt: value.attempt.try_into().unwrap(),
+            attempted_at: value.attempted_at,
+            max_attempts: value.max_attempts.try_into().unwrap(),
+            errors: value.errors,
+            inserted_at: value.inserted_at,
+            scheduled_at: value.scheduled_at,
+            completed_at: value.completed_at,
+            cancelled_at: value.cancelled_at,
+            discarded_at: value.discarded_at,
+        })
+    }
+}
+
 impl<E> Job<E> {
     pub(crate) fn is_final_attempt(&self) -> bool {
         self.attempt == self.max_attempts
     }
 }
 
+#[derive(Debug)]
 pub enum JobStatus {
     Complete,
     Executing,

@@ -23,21 +23,22 @@ pub async fn main() {
 
     let pool = PgPoolOptions::new().connect(&db_url).await.unwrap();
     let backend = RexecutorPgBackend::new(pool).await.unwrap();
-    // Might be nice to make this be able to take a PgPool directly
+
     let handle = Rexecuter::new(backend.clone())
         .with_executor::<BasicJob>()
         .with_executor::<TimeoutJob>()
         .with_executor::<CancelledJob>()
         .with_executor::<SnoozeJob>()
-        .with_executor::<FlakyJob>();
+        .with_executor::<FlakyJob>()
+        .set_global_backend()
+        .unwrap();
 
     let job_id = BasicJob::builder()
         .with_max_attempts(3)
         .with_tags(vec!["initial_job"])
         .with_data("First job".into())
         .schedule_in(TimeDelta::seconds(2))
-        // Might be nice to make this be able to take a reference to a PgPool directly
-        .enqueue(&backend)
+        .enqueue()
         .await
         .unwrap();
     println!("Inserted job {job_id}");
@@ -47,7 +48,7 @@ pub async fn main() {
         .add_tag("second_job")
         .add_tag("running_again")
         .with_data("Second job".into())
-        .enqueue(&backend)
+        .enqueue()
         .await
         .unwrap();
     println!("Inserted job {job_id}");
@@ -57,29 +58,25 @@ pub async fn main() {
         .with_tags(vec!["flaky_job"])
         .with_data("Flaky job".into())
         .schedule_in(TimeDelta::seconds(1))
-        .enqueue(&backend)
+        .enqueue()
         .await
         .unwrap();
     println!("Inserted job {job_id}");
 
     let job_id = FlakyJob::builder()
         .with_data("Discarded job".into())
-        .enqueue(&backend)
+        .enqueue()
         .await
         .unwrap();
     println!("Inserted job {job_id}");
 
-    let job_id = TimeoutJob::builder()
-        .with_data(15)
-        .enqueue(&backend)
-        .await
-        .unwrap();
+    let job_id = TimeoutJob::builder().with_data(15).enqueue().await.unwrap();
     println!("Inserted job {job_id}");
 
-    let job_id = CancelledJob::builder().enqueue(&backend).await.unwrap();
+    let job_id = CancelledJob::builder().enqueue().await.unwrap();
     println!("Inserted job {job_id}");
 
-    let job_id = SnoozeJob::builder().enqueue(&backend).await.unwrap();
+    let job_id = SnoozeJob::builder().enqueue().await.unwrap();
     println!("Inserted job {job_id}");
 
     tokio::time::sleep(std::time::Duration::from_secs(5)).await;

@@ -1,19 +1,20 @@
 use std::{
     collections::HashMap,
-    marker::PhantomData,
     ops::{Deref, Sub},
+    pin::Pin,
     sync::Arc,
 };
 
 use async_stream::stream;
+use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use futures::Stream;
 use rexecutor::{
     backend::{Backend, BackendError, EnqueuableJob, ExecutionError},
-    executor::Executor,
+    executor::ExecutorIdentifier,
     job::JobId,
 };
-use serde::{de::DeserializeOwned, Deserialize, Serialize};
+use serde::Deserialize;
 use sqlx::{postgres::PgListener, types::Text, PgPool};
 use tokio::sync::{mpsc, RwLock};
 
@@ -55,38 +56,33 @@ impl From<&PgPool> for RexecutorPgBackend {
     }
 }
 
+#[async_trait]
 impl Backend for RexecutorPgBackend {
     #[instrument(skip(self))]
-    async fn subscribe_new_events<E>(
-        self,
-    ) -> impl Stream<Item = Result<rexecutor::job::Job<E::Data>, BackendError>>
-    where
-        E: Executor + Send,
-        E::Data: DeserializeOwned + Send,
-    {
+    async fn subscribe_new_events(
+        &self,
+        excutor_identifier: ExecutorIdentifier,
+    ) -> Pin<Box<dyn Stream<Item = Result<rexecutor::backend::Job, BackendError>> + Send>> {
         let (sender, receiver) = mpsc::unbounded_channel();
         self.subscribers
             .write()
             .await
-            .entry(E::NAME)
+            .entry(excutor_identifier.as_str())
             .or_default()
             .push(sender);
 
-        let mut stream: ReadyJobStream<E> = ReadyJobStream {
+        let mut stream: ReadyJobStream = ReadyJobStream {
             receiver,
             backend: self.clone(),
-            _executor: PhantomData,
+            excutor_identifier,
         };
-        stream! {
+        Box::pin(stream! {
             loop {
                 yield stream.next().await;
             }
-        }
+        })
     }
-    async fn enqueue<D: Send + Serialize>(
-        &self,
-        job: EnqueuableJob<D>,
-    ) -> Result<JobId, BackendError> {
+    async fn enqueue(&self, job: EnqueuableJob) -> Result<JobId, BackendError> {
         self.insert_job(job)
             .await
             // TODO error handling
@@ -142,28 +138,21 @@ struct Notification {
     scheduled_at: DateTime<Utc>,
 }
 
-pub struct ReadyJobStream<E>
-where
-    E: Executor,
-{
+pub struct ReadyJobStream {
     backend: RexecutorPgBackend,
+    excutor_identifier: ExecutorIdentifier,
     receiver: tokio::sync::mpsc::UnboundedReceiver<DateTime<Utc>>,
-    _executor: PhantomData<E>,
 }
 
-impl<E> ReadyJobStream<E>
-where
-    E: Executor,
-    E::Data: DeserializeOwned,
-{
+impl ReadyJobStream {
     const DEFAULT_DELAY: std::time::Duration = std::time::Duration::from_secs(30);
     const DELTA: std::time::Duration = std::time::Duration::from_millis(10);
 
-    pub async fn next(&mut self) -> Result<rexecutor::job::Job<E::Data>, BackendError> {
+    pub async fn next(&mut self) -> Result<rexecutor::backend::Job, BackendError> {
         loop {
             let delay = match self
                 .backend
-                .next_available_job_scheduled_at_for_executor(E::NAME)
+                .next_available_job_scheduled_at_for_executor(self.excutor_identifier.as_str())
                 .await
                 .map_err(|_| BackendError::BadStateError)?
             {
@@ -177,7 +166,7 @@ where
             if delay <= Self::DELTA {
                 if let Some(job) = self
                     .backend
-                    .load_job_mark_as_executing_for_executor(E::NAME)
+                    .load_job_mark_as_executing_for_executor(self.excutor_identifier.as_str())
                     .await
                     .map_err(|_| BackendError::BadStateError)?
                 {
@@ -278,10 +267,7 @@ impl RexecutorPgBackend {
         .await
     }
 
-    async fn insert_job<D>(&self, job: EnqueuableJob<D>) -> sqlx::Result<JobId>
-    where
-        D: Serialize + Send,
-    {
+    async fn insert_job(&self, job: EnqueuableJob) -> sqlx::Result<JobId> {
         let data = sqlx::query!(
             r#"INSERT INTO rexecutor_jobs (
                 executor,
@@ -293,8 +279,7 @@ impl RexecutorPgBackend {
             RETURNING id
             "#,
             job.executor,
-            // TODO: unwrap
-            serde_json::to_value(job.data).unwrap(),
+            job.data,
             job.max_attempts as i32,
             job.scheduled_at,
             &job.tags,
@@ -443,6 +428,7 @@ impl RexecutorPgBackend {
 mod test {
     use super::*;
     use chrono::TimeDelta;
+    use serde_json::Value;
     use sqlx::PgPool;
 
     const EXECUTOR: &str = "executor";
@@ -451,7 +437,7 @@ mod test {
         async fn with_mock_job(&self, scheduled_at: DateTime<Utc>) -> JobId {
             let job = EnqueuableJob {
                 executor: EXECUTOR.to_owned(),
-                data: "data".to_owned(),
+                data: Value::String("data".to_owned()),
                 max_attempts: 5,
                 scheduled_at,
                 tags: Default::default(),
@@ -536,7 +522,7 @@ mod test {
         let backend: RexecutorPgBackend = pool.into();
         let job = EnqueuableJob {
             executor: "executor".to_owned(),
-            data: "data".to_owned(),
+            data: Value::String("data".to_owned()),
             max_attempts: 5,
             scheduled_at: Utc::now(),
             tags: Default::default(),

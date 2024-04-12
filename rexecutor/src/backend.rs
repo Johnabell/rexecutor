@@ -1,51 +1,43 @@
+use std::pin::Pin;
+
+use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use futures::Stream;
-use serde::{de::DeserializeOwned, Serialize};
 use thiserror::Error;
 
 use crate::{
-    executor::{Executor, ExecutorIdentifier},
-    job::{ErrorType, Job, JobId},
+    executor::ExecutorIdentifier,
+    job::{ErrorType, JobError, JobId, JobStatus},
 };
-
-pub trait Backend: Clone {
-    fn subscribe_new_events<E>(
-        self,
-    ) -> impl std::future::Future<
-        Output = impl Stream<Item = Result<Job<E::Data>, BackendError>> + Send,
-    > + Send
-    where
-        E: Executor + Send,
-        E::Data: DeserializeOwned + Send;
-    fn enqueue<D: Send + Serialize>(
+#[async_trait]
+pub trait Backend: std::fmt::Debug {
+    async fn subscribe_new_events(
         &self,
-        job: EnqueuableJob<D>,
-    ) -> impl std::future::Future<Output = Result<JobId, BackendError>> + Send;
-    fn mark_job_complete(
-        &self,
-        id: JobId,
-    ) -> impl std::future::Future<Output = Result<(), BackendError>> + std::marker::Send;
-    fn mark_job_retryable(
+        executor_identifier: ExecutorIdentifier,
+    ) -> Pin<Box<dyn Stream<Item = Result<Job, BackendError>> + Send>>;
+    async fn enqueue(&self, job: EnqueuableJob) -> Result<JobId, BackendError>;
+    async fn mark_job_complete(&self, id: JobId) -> Result<(), BackendError>;
+    async fn mark_job_retryable(
         &self,
         id: JobId,
         next_scheduled_at: DateTime<Utc>,
         error: ExecutionError,
-    ) -> impl std::future::Future<Output = Result<(), BackendError>> + std::marker::Send;
-    fn mark_job_discarded(
+    ) -> Result<(), BackendError>;
+    async fn mark_job_discarded(
         &self,
         id: JobId,
         error: ExecutionError,
-    ) -> impl std::future::Future<Output = Result<(), BackendError>> + std::marker::Send;
-    fn mark_job_cancelled(
+    ) -> Result<(), BackendError>;
+    async fn mark_job_cancelled(
         &self,
         id: JobId,
         error: ExecutionError,
-    ) -> impl std::future::Future<Output = Result<(), BackendError>> + std::marker::Send;
-    fn mark_job_snoozed(
+    ) -> Result<(), BackendError>;
+    async fn mark_job_snoozed(
         &self,
         id: JobId,
         next_scheduled_at: DateTime<Utc>,
-    ) -> impl std::future::Future<Output = Result<(), BackendError>> + std::marker::Send;
+    ) -> Result<(), BackendError>;
 }
 
 #[derive(Debug)]
@@ -56,12 +48,30 @@ pub struct ExecutionError {
 
 // TODO: should this be non_exhaustive?
 // #[non_exhaustive]
-pub struct EnqueuableJob<E> {
+#[derive(Debug)]
+pub struct EnqueuableJob {
     pub executor: String,
-    pub data: E,
+    pub data: serde_json::Value,
     pub max_attempts: u16,
     pub scheduled_at: DateTime<Utc>,
     pub tags: Vec<String>,
+}
+
+#[derive(Debug)]
+pub struct Job {
+    pub id: i32,
+    pub status: JobStatus,
+    pub executor: String,
+    pub data: serde_json::Value,
+    pub attempt: i32,
+    pub max_attempts: i32,
+    pub errors: Vec<JobError>,
+    pub inserted_at: DateTime<Utc>,
+    pub scheduled_at: DateTime<Utc>,
+    pub attempted_at: Option<DateTime<Utc>>,
+    pub completed_at: Option<DateTime<Utc>>,
+    pub cancelled_at: Option<DateTime<Utc>>,
+    pub discarded_at: Option<DateTime<Utc>>,
 }
 
 #[derive(Debug, Error)]
@@ -73,11 +83,6 @@ pub enum BackendError {
     BadStateError,
 }
 
-pub struct ReadyJob {
-    pub id: JobId,
-    pub executor: ExecutorIdentifier,
-}
-
 pub struct DefaultBackend {}
 
 #[cfg(test)]
@@ -87,7 +92,7 @@ pub(crate) mod test {
 
     use super::*;
 
-    #[derive(Clone)]
+    #[derive(Clone, Debug)]
     pub struct MockBackend {
         enqueue_return: Arc<Mutex<Vec<Result<JobId, BackendError>>>>,
     }
@@ -100,20 +105,15 @@ pub(crate) mod test {
         }
     }
 
+    #[async_trait]
     impl Backend for MockBackend {
-        async fn subscribe_new_events<E>(
-            self,
-        ) -> impl Stream<Item = Result<Job<E::Data>, BackendError>>
-        where
-            E: Executor + Send,
-            E::Data: DeserializeOwned + Send,
-        {
-            futures::stream::empty()
-        }
-        async fn enqueue<D: Send + Serialize>(
+        async fn subscribe_new_events(
             &self,
-            _job: EnqueuableJob<D>,
-        ) -> Result<JobId, BackendError> {
+            _executor_name: ExecutorIdentifier,
+        ) -> Pin<Box<dyn Stream<Item = Result<Job, BackendError>> + Send>> {
+            Box::pin(futures::stream::empty())
+        }
+        async fn enqueue(&self, _job: EnqueuableJob) -> Result<JobId, BackendError> {
             self.enqueue_return
                 .lock()
                 .unwrap()
