@@ -146,7 +146,7 @@ pub struct ReadyJobStream {
 
 impl ReadyJobStream {
     const DEFAULT_DELAY: std::time::Duration = std::time::Duration::from_secs(30);
-    const DELTA: std::time::Duration = std::time::Duration::from_millis(10);
+    const DELTA: std::time::Duration = std::time::Duration::from_millis(15);
 
     pub async fn next(&mut self) -> Result<rexecutor::backend::Job, BackendError> {
         loop {

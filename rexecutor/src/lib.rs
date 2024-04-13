@@ -137,7 +137,7 @@ where
                         .expect("No future scheduled time for cron job");
                     let delay = next
                         .sub(Utc::now())
-                        .sub(TimeDelta::microseconds(10))
+                        .sub(TimeDelta::milliseconds(10))
                         .to_std()
                         .unwrap_or(Duration::ZERO);
                     tokio::select! {
@@ -145,12 +145,18 @@ where
                             let _ = E::builder()
                                 .schedule_at(next)
                                 .with_data(data.clone())
+                                // We will need to use this to ensure when multiple instances are
+                                // running that we only schedule the job once
                                 .unique()
                                 .enqueue_to_backend(&backend)
                                 .await
                                 .inspect_err(|err| {
                                     tracing::error!(?err, "Failed to enqueue cron job {} with {err}", E::NAME);
                                 });
+                            let delay = next - Utc::now();
+                            if delay > TimeDelta::zero() {
+                                tokio::time::sleep(delay.to_std().unwrap()).await;
+                            }
                         },
                         _ = rx.recv() => {
                             break;
