@@ -30,7 +30,6 @@ impl Display for JobId {
     }
 }
 
-// TODO: add support for priority
 // #[non_exhaustive]
 pub struct Job<E> {
     pub id: JobId,
@@ -39,6 +38,7 @@ pub struct Job<E> {
     pub data: E,
     pub attempt: u16,
     pub max_attempts: u16,
+    pub priority: u16,
     pub errors: Vec<JobError>,
     pub inserted_at: DateTime<Utc>,
     pub scheduled_at: DateTime<Utc>,
@@ -64,6 +64,7 @@ where
             attempt: value.attempt.try_into().unwrap(),
             attempted_at: value.attempted_at,
             max_attempts: value.max_attempts.try_into().unwrap(),
+            priority: value.priority.try_into().unwrap(),
             errors: value.errors,
             inserted_at: value.inserted_at,
             scheduled_at: value.scheduled_at,

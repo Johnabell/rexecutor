@@ -18,6 +18,7 @@ where
     max_attempts: Option<u16>,
     tags: Vec<String>,
     scheduled_at: DateTime<Utc>,
+    priority: u16,
     uniqueness_criteria: Option<UniquenessCriteria<'a>>,
 }
 
@@ -32,6 +33,7 @@ where
             max_attempts: None,
             tags: Default::default(),
             scheduled_at: Utc::now(),
+            priority: 0,
             uniqueness_criteria: None,
         }
     }
@@ -55,6 +57,7 @@ where
             ..self
         }
     }
+
     pub fn schedule_at(self, schedule_at: DateTime<Utc>) -> Self {
         Self {
             scheduled_at: schedule_at,
@@ -72,17 +75,23 @@ where
         tags.push(tag.into());
         Self { tags, ..self }
     }
+
     pub fn with_tags(self, tags: Vec<impl Into<String>>) -> Self {
         let tags = tags.into_iter().map(Into::into).collect();
         Self { tags, ..self }
     }
-    // TODO: add a function to ensure uniqueness of jobs
+
     pub fn unique(self, criteria: UniquenessCriteria<'a>) -> Self {
         Self {
             uniqueness_criteria: Some(criteria),
             ..self
         }
     }
+
+    pub fn with_priority(self, priority: u16) -> Self {
+        Self { priority, ..self }
+    }
+
     // TODO: add optional metadata
     pub fn metadata(self) -> Self {
         self
@@ -111,6 +120,7 @@ where
                 max_attempts: self.max_attempts.unwrap_or(E::MAX_ATTEMPTS),
                 scheduled_at: self.scheduled_at,
                 tags: self.tags,
+                priority: self.priority,
                 uniqueness_criteria: self.uniqueness_criteria.or(E::UNIQUENESS_CRITERIA),
             })
             .await?;

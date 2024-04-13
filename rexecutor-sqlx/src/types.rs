@@ -37,6 +37,7 @@ pub(crate) struct Job {
     pub data: serde_json::Value,
     pub attempt: i32,
     pub max_attempts: i32,
+    pub priority: i32,
     pub errors: Vec<serde_json::Value>,
     pub inserted_at: DateTime<Utc>,
     pub scheduled_at: DateTime<Utc>,
@@ -59,6 +60,7 @@ impl TryFrom<Job> for rexecutor::backend::Job {
             attempt: value.attempt,
             attempted_at: value.attempted_at,
             max_attempts: value.max_attempts,
+            priority: value.priority,
             errors: value
                 .errors
                 .into_iter()

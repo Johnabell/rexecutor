@@ -55,6 +55,7 @@ pub struct EnqueuableJob<'a> {
     pub max_attempts: u16,
     pub scheduled_at: DateTime<Utc>,
     pub tags: Vec<String>,
+    pub priority: u16,
     pub uniqueness_criteria: Option<UniquenessCriteria<'a>>,
 }
 
@@ -66,6 +67,7 @@ pub struct Job {
     pub data: serde_json::Value,
     pub attempt: i32,
     pub max_attempts: i32,
+    pub priority: i32,
     pub errors: Vec<JobError>,
     pub inserted_at: DateTime<Utc>,
     pub scheduled_at: DateTime<Utc>,

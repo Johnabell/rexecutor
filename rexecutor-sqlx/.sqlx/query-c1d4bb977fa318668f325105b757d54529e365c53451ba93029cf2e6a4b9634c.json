@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT\n                    id,\n                    status AS \"status: JobStatus\",\n                    executor,\n                    data,\n                    attempt,\n                    max_attempts,\n                    errors,\n                    inserted_at,\n                    scheduled_at,\n                    attempted_at,\n                    completed_at,\n                    cancelled_at,\n                    discarded_at\n                FROM rexecutor_jobs\n                ",
+  "query": "UPDATE rexecutor_jobs\n            SET\n                status = 'executing',\n                attempted_at = timezone('UTC'::text, now()),\n                attempt = attempt + 1\n            WHERE id IN (\n                SELECT id from rexecutor_jobs\n                WHERE scheduled_at - timezone('UTC'::text, now()) < '00:00:00.1'\n                AND status in ('scheduled', 'retryable')\n                AND executor = $1\n                ORDER BY priority, scheduled_at\n                LIMIT 1\n                FOR UPDATE SKIP LOCKED\n            )\n            RETURNING\n                id,\n                status AS \"status: JobStatus\",\n                executor,\n                data,\n                attempt,\n                max_attempts,\n                priority,\n                errors,\n                inserted_at,\n                scheduled_at,\n                attempted_at,\n                completed_at,\n                cancelled_at,\n                discarded_at\n            ",
   "describe": {
     "columns": [
       {
@@ -49,44 +49,52 @@
       },
       {
         "ordinal": 6,
+        "name": "priority",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 7,
         "name": "errors",
         "type_info": "JsonbArray"
       },
       {
-        "ordinal": 7,
+        "ordinal": 8,
         "name": "inserted_at",
         "type_info": "Timestamptz"
       },
       {
-        "ordinal": 8,
+        "ordinal": 9,
         "name": "scheduled_at",
         "type_info": "Timestamptz"
       },
       {
-        "ordinal": 9,
+        "ordinal": 10,
         "name": "attempted_at",
         "type_info": "Timestamptz"
       },
       {
-        "ordinal": 10,
+        "ordinal": 11,
         "name": "completed_at",
         "type_info": "Timestamptz"
       },
       {
-        "ordinal": 11,
+        "ordinal": 12,
         "name": "cancelled_at",
         "type_info": "Timestamptz"
       },
       {
-        "ordinal": 12,
+        "ordinal": 13,
         "name": "discarded_at",
         "type_info": "Timestamptz"
       }
     ],
     "parameters": {
-      "Left": []
+      "Left": [
+        "Text"
+      ]
     },
     "nullable": [
+      false,
       false,
       false,
       false,
@@ -102,5 +110,5 @@
       true
     ]
   },
-  "hash": "cd29216fca6ce86fc302a2960d71d2f731f1b94b35978095ac59e542c4d09e18"
+  "hash": "c1d4bb977fa318668f325105b757d54529e365c53451ba93029cf2e6a4b9634c"
 }

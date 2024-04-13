@@ -246,6 +246,7 @@ impl RexecutorPgBackend {
                 WHERE scheduled_at - timezone('UTC'::text, now()) < '00:00:00.1'
                 AND status in ('scheduled', 'retryable')
                 AND executor = $1
+                ORDER BY priority, scheduled_at
                 LIMIT 1
                 FOR UPDATE SKIP LOCKED
             )
@@ -256,6 +257,7 @@ impl RexecutorPgBackend {
                 data,
                 attempt,
                 max_attempts,
+                priority,
                 errors,
                 inserted_at,
                 scheduled_at,
@@ -277,14 +279,16 @@ impl RexecutorPgBackend {
                 data,
                 max_attempts,
                 scheduled_at,
+                priority,
                 tags
-            ) VALUES ($1, $2, $3, $4, $5)
+            ) VALUES ($1, $2, $3, $4, $5, $6)
             RETURNING id
             "#,
             job.executor,
             job.data,
             job.max_attempts as i32,
             job.scheduled_at,
+            job.priority as i32,
             &job.tags,
         )
         .fetch_one(self.deref())
@@ -314,15 +318,17 @@ impl RexecutorPgBackend {
                         data,
                         max_attempts,
                         scheduled_at,
+                        priority,
                         tags,
                         uniqueness_key
-                    ) VALUES ($1, $2, $3, $4, $5, $6)
+                    ) VALUES ($1, $2, $3, $4, $5, $6, $7)
                     RETURNING id
                     "#,
                     job.executor,
                     job.data,
                     job.max_attempts as i32,
                     job.scheduled_at,
+                    job.priority as i32,
                     &job.tags,
                     unique_identifier,
                 )
@@ -519,6 +525,7 @@ mod test {
                 max_attempts: 5,
                 scheduled_at,
                 tags: Default::default(),
+                priority: 0,
                 uniqueness_criteria: None,
             };
 
@@ -535,6 +542,7 @@ mod test {
                     data,
                     attempt,
                     max_attempts,
+                    priority,
                     errors,
                     inserted_at,
                     scheduled_at,
@@ -605,6 +613,7 @@ mod test {
             max_attempts: 5,
             scheduled_at: Utc::now(),
             tags: Default::default(),
+            priority: 0,
             uniqueness_criteria: None,
         };
 

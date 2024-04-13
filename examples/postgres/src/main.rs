@@ -51,6 +51,7 @@ pub async fn main() {
         .add_tag("second_job")
         .add_tag("running_again")
         .with_data("Second job".into())
+        .with_priority(2)
         .enqueue()
         .await
         .unwrap();
