@@ -1,4 +1,4 @@
-use std::{hash::Hash, ops::Sub, sync::Arc, time::Duration};
+use std::{hash::Hash, marker::PhantomData, ops::Sub, sync::Arc, time::Duration};
 
 pub mod backend;
 pub mod executor;
@@ -19,13 +19,22 @@ use tokio::{
 
 use crate::job::uniqueness_criteria::UniquenessCriteria;
 
+trait InternalRexecutorState {}
+
+pub struct GlobalSet;
+pub struct GlobalUnset;
+impl InternalRexecutorState for GlobalUnset {}
+impl InternalRexecutorState for GlobalSet {}
+
 #[derive(Debug)]
-pub struct Rexecuter<B: Backend> {
+#[allow(private_bounds)]
+pub struct Rexecuter<B: Backend, State: InternalRexecutorState> {
     executors: Vec<ExecutorHandle>,
     backend: B,
+    _state: PhantomData<State>,
 }
 
-impl<B> Default for Rexecuter<B>
+impl<B> Default for Rexecuter<B, GlobalUnset>
 where
     B: Backend + Default,
 {
@@ -62,7 +71,7 @@ enum WakeMessage {
     Wake,
 }
 
-impl<B> Rexecuter<B>
+impl<B> Rexecuter<B, GlobalUnset>
 where
     B: Backend,
 {
@@ -70,6 +79,7 @@ where
         Self {
             executors: Default::default(),
             backend,
+            _state: PhantomData,
         }
     }
 }
@@ -78,9 +88,31 @@ static GLOBAL_BACKEND: OnceCell<Arc<dyn Backend + 'static + Sync + Send>> = Once
 
 pub struct PrunerConfig {}
 
-impl<B> Rexecuter<B>
+impl<B> Rexecuter<B, GlobalUnset>
 where
     B: Backend + Send + 'static + Sync + Clone,
+{
+    pub fn set_global_backend(self) -> Result<Rexecuter<B, GlobalSet>, RexecuterError> {
+        GLOBAL_BACKEND
+            .set(Arc::new(self.backend.clone()))
+            .map_err(|err| {
+                tracing::error!(?err, "Couldn't set global backend {err}");
+                RexecuterError::GlobalBackend
+            })?;
+
+        Ok(Rexecuter {
+            executors: self.executors,
+            backend: self.backend,
+            _state: PhantomData,
+        })
+    }
+}
+
+#[allow(private_bounds)]
+impl<B, State> Rexecuter<B, State>
+where
+    B: Backend + Send + 'static + Sync + Clone,
+    State: InternalRexecutorState,
 {
     pub fn with_executor<E>(mut self) -> Self
     where
@@ -180,18 +212,6 @@ where
         self.with_executor::<E>()
     }
 
-    // TODO: make this only possible to call once
-    pub fn set_global_backend(self) -> Result<Self, RexecuterError> {
-        GLOBAL_BACKEND
-            .set(Arc::new(self.backend.clone()))
-            .map_err(|err| {
-                tracing::error!(?err, "Couldn't set global backend {err}");
-                RexecuterError::GlobalBackend
-            })?;
-
-        Ok(self)
-    }
-
     pub fn with_job_pruner(self, _config: PrunerConfig) -> Self {
         // TODO implement the pruner
         self
@@ -232,6 +252,6 @@ mod tests {
 
     #[tokio::test]
     async fn setup() {
-        let _handle = Rexecuter::<MockBackend>::default().with_executor::<SimpleExecutor>();
+        let _handle = Rexecuter::<MockBackend, _>::default().with_executor::<SimpleExecutor>();
     }
 }
