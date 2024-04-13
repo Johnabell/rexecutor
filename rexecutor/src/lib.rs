@@ -1,4 +1,4 @@
-use std::{collections::HashMap, sync::Arc};
+use std::{ops::Sub, sync::Arc, time::Duration};
 
 pub mod backend;
 pub mod executor;
@@ -6,10 +6,11 @@ pub mod job;
 pub mod notifier;
 
 use backend::{Backend, BackendError};
+use chrono::{TimeDelta, Utc};
 use executor::Executor;
 use futures::StreamExt;
 use job::runner::JobRunner;
-use serde::de::DeserializeOwned;
+use serde::{de::DeserializeOwned, Serialize};
 use thiserror::Error;
 use tokio::{
     sync::{mpsc, OnceCell},
@@ -18,7 +19,7 @@ use tokio::{
 
 #[derive(Debug)]
 pub struct Rexecuter<B: Backend> {
-    executors: HashMap<&'static str, ExecutorHandle>,
+    executors: Vec<ExecutorHandle>,
     backend: B,
 }
 
@@ -89,37 +90,83 @@ where
         let handle = tokio::spawn({
             let backend = self.backend.clone();
             async move {
-                let stream = backend.clone().subscribe_new_events(E::NAME.into()).await;
-                let runner = JobRunner::<B, E>::new(backend);
-                tokio::pin!(stream);
-                loop {
-                    tokio::select! {
-                        message = stream.next() => {
+                backend
+                    .clone()
+                    .subscribe_new_events(E::NAME.into())
+                    .await
+                    .take_until(rx.recv())
+                    .for_each_concurrent(E::MAX_CONCURRENCY, {
+                        |message| async {
+                            let runner = JobRunner::<B, E>::new(backend.clone());
                             match message {
-                                Some(Ok(job)) => match job.try_into() {
+                                Ok(job) => match job.try_into() {
                                     Ok(job) => runner.execute_job(job).await,
-                                    Err(error) => tracing::error!(?error, "Failed to decode job: {error}"),
+                                    Err(error) => {
+                                        tracing::error!(?error, "Failed to decode job: {error}")
+                                    }
                                 },
-                                _ => tracing::warn!("Failed to get from stream")
+                                _ => tracing::warn!("Failed to get from stream"),
                             }
-                        },
-                        _ = rx.recv() => {
-                            break;
                         }
-                    }
-                }
+                    })
+                    .await;
                 tracing::debug!("Shutting down Rexecutor job runner for {}", E::NAME);
             }
         });
 
-        self.executors.insert(
-            E::NAME,
-            ExecutorHandle {
-                sender,
-                handle: Some(handle),
-            },
-        );
+        self.executors.push(ExecutorHandle {
+            sender,
+            handle: Some(handle),
+        });
         self
+    }
+
+    pub fn with_cron_executor<E>(mut self, schedule: cron::Schedule, data: E::Data) -> Self
+    where
+        E: Executor + 'static + Sync + Send,
+        E::Data: Send + Serialize + DeserializeOwned + Clone,
+    {
+        let (sender, mut rx) = mpsc::unbounded_channel();
+        let handle = tokio::spawn({
+            let backend = self.backend.clone();
+            async move {
+                loop {
+                    let next = schedule
+                        .upcoming(Utc)
+                        .next()
+                        .expect("No future scheduled time for cron job");
+                    let delay = next
+                        .sub(Utc::now())
+                        .sub(TimeDelta::microseconds(10))
+                        .to_std()
+                        .unwrap_or(Duration::ZERO);
+                    tokio::select! {
+                        _ = tokio::time::sleep(delay) => {
+                            let _ = E::builder()
+                                .schedule_at(next)
+                                .with_data(data.clone())
+                                .unique()
+                                .enqueue_to_backend(&backend)
+                                .await
+                                .inspect_err(|err| {
+                                    tracing::error!(?err, "Failed to enqueue cron job {} with {err}", E::NAME);
+                                });
+                        },
+                        _ = rx.recv() => {
+                            break;
+                        },
+                    }
+                }
+                tracing::debug!("Shutting down cron scheduler for {}", E::NAME);
+            }
+        });
+
+        self.executors.push(ExecutorHandle {
+            sender,
+            handle: Some(handle),
+        });
+
+        self.with_executor::<E>()
     }
 
     // TODO: make this only possible to call once
@@ -143,7 +190,7 @@ where
         tracing::debug!("Shutting down Rexecutor tasks");
         futures::future::join_all(
             self.executors
-                .values_mut()
+                .iter_mut()
                 .map(ExecutorHandle::graceful_shutdown),
         )
         .await
@@ -152,6 +199,7 @@ where
     }
 }
 
+// TODO: split errors
 #[derive(Debug, Error)]
 pub enum RexecuterError {
     #[error("Failed to gracefully shut down")]
@@ -162,6 +210,8 @@ pub enum RexecuterError {
     GlobalBackend,
     #[error("Error encoding or decoding value")]
     EncodeError(#[from] serde_json::Error),
+    #[error("Error reading cron expression")]
+    CronExpressionError(#[from] cron::error::Error),
 }
 
 #[cfg(test)]

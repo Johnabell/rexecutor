@@ -23,6 +23,7 @@ pub async fn main() {
 
     let pool = PgPoolOptions::new().connect(&db_url).await.unwrap();
     let backend = RexecutorPgBackend::new(pool).await.unwrap();
+    let schedule = cron::Schedule::try_from("* * * * * *").unwrap();
 
     let handle = Rexecuter::new(backend.clone())
         .with_executor::<BasicJob>()
@@ -30,6 +31,8 @@ pub async fn main() {
         .with_executor::<CancelledJob>()
         .with_executor::<SnoozeJob>()
         .with_executor::<FlakyJob>()
+        .with_cron_executor::<CronJob>(schedule.clone(), "tick".to_owned())
+        .with_cron_executor::<CronJob>(schedule, "tock".to_owned())
         .set_global_backend()
         .unwrap();
 
@@ -187,5 +190,17 @@ impl Executor for SnoozeJob {
         } else {
             ExecutionResult::Done
         }
+    }
+}
+
+struct CronJob;
+#[async_trait]
+impl Executor for CronJob {
+    type Data = String;
+    const NAME: &'static str = "cron_job";
+    const MAX_ATTEMPTS: u16 = 1;
+    async fn execute(job: Job<Self::Data>) -> ExecutionResult {
+        println!("{} running, with args: {:?}", Self::NAME, job.data);
+        ExecutionResult::Done
     }
 }

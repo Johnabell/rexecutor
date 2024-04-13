@@ -24,7 +24,6 @@ CREATE TABLE IF NOT EXISTS rexecutor_jobs (
   attempted_by VARCHAR[],
   tags VARCHAR[] DEFAULT ARRAY[]::character varying[],
   metadata JSONB DEFAULT '{}'::jsonb,
-  queue VARCHAR DEFAULT 'default',
   priority INTEGER NOT null DEFAULT 0,
   inserted_at TIMESTAMP WITH TIME ZONE NOT null DEFAULT timezone('UTC'::text, now()),
   scheduled_at TIMESTAMP WITH TIME ZONE NOT null DEFAULT timezone('UTC'::text, now()),

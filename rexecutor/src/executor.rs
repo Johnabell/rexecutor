@@ -10,6 +10,7 @@ pub trait Executor {
     type Data;
     const NAME: &'static str;
     const MAX_ATTEMPTS: u16 = 5;
+    const MAX_CONCURRENCY: Option<usize> = None;
     const BLOCKING: bool = false;
 
     async fn execute(job: Job<Self::Data>) -> ExecutionResult;
