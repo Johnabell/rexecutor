@@ -25,6 +25,7 @@ CREATE TABLE IF NOT EXISTS rexecutor_jobs (
   tags VARCHAR[] DEFAULT ARRAY[]::character varying[],
   metadata JSONB DEFAULT '{}'::jsonb,
   priority INTEGER NOT null DEFAULT 0,
+  uniqueness_key BIGINT,
   inserted_at TIMESTAMP WITH TIME ZONE NOT null DEFAULT timezone('UTC'::text, now()),
   scheduled_at TIMESTAMP WITH TIME ZONE NOT null DEFAULT timezone('UTC'::text, now()),
   attempted_at TIMESTAMP WITH TIME ZONE,
@@ -35,6 +36,7 @@ CREATE TABLE IF NOT EXISTS rexecutor_jobs (
 
 CREATE INDEX IF NOT EXISTS rexecutor_job_data_index ON public.rexecutor_jobs USING gin (data);
 CREATE INDEX IF NOT EXISTS rexecutor_job_meta_index ON public.rexecutor_jobs USING gin (metadata);
+CREATE INDEX IF NOT EXISTS rexecutor_job_uniqueness_index ON public.rexecutor_jobs (uniqueness_key, inserted_at);
 
 CREATE OR REPLACE
 FUNCTION public.rexecutor_new_job_notify()

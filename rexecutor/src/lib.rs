@@ -1,4 +1,4 @@
-use std::{ops::Sub, sync::Arc, time::Duration};
+use std::{hash::Hash, ops::Sub, sync::Arc, time::Duration};
 
 pub mod backend;
 pub mod executor;
@@ -16,6 +16,8 @@ use tokio::{
     sync::{mpsc, OnceCell},
     task::JoinHandle,
 };
+
+use crate::job::uniqueness_criteria::UniquenessCriteria;
 
 #[derive(Debug)]
 pub struct Rexecuter<B: Backend> {
@@ -124,7 +126,7 @@ where
     pub fn with_cron_executor<E>(mut self, schedule: cron::Schedule, data: E::Data) -> Self
     where
         E: Executor + 'static + Sync + Send,
-        E::Data: Send + Serialize + DeserializeOwned + Clone,
+        E::Data: Send + Serialize + DeserializeOwned + Clone + Hash,
     {
         let (sender, mut rx) = mpsc::unbounded_channel();
         let handle = tokio::spawn({
@@ -142,12 +144,15 @@ where
                         .unwrap_or(Duration::ZERO);
                     tokio::select! {
                         _ = tokio::time::sleep(delay) => {
+                            let criteria = UniquenessCriteria::default()
+                                .by_duration(TimeDelta::zero())
+                                .by_key(&data)
+                                .by_executor();
+
                             let _ = E::builder()
                                 .schedule_at(next)
                                 .with_data(data.clone())
-                                // We will need to use this to ensure when multiple instances are
-                                // running that we only schedule the job once
-                                .unique()
+                                .unique(criteria)
                                 .enqueue_to_backend(&backend)
                                 .await
                                 .inspect_err(|err| {

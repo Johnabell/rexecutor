@@ -7,6 +7,7 @@ use crate::backend;
 
 pub mod builder;
 pub(crate) mod runner;
+pub mod uniqueness_criteria;
 
 #[derive(Debug, Eq, PartialEq, Clone, Copy)]
 pub struct JobId(i32);
@@ -29,7 +30,7 @@ impl Display for JobId {
     }
 }
 
-// TODO: add support for queues and concurrent execution limits
+// TODO: add support for priority
 // #[non_exhaustive]
 pub struct Job<E> {
     pub id: JobId,
@@ -79,7 +80,7 @@ impl<E> Job<E> {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Eq, PartialEq, Hash)]
 pub enum JobStatus {
     Complete,
     Executing,

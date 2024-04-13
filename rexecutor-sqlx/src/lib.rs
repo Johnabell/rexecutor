@@ -1,5 +1,6 @@
 use std::{
     collections::HashMap,
+    hash::{Hash, Hasher},
     ops::{Deref, Sub},
     pin::Pin,
     sync::Arc,
@@ -12,10 +13,10 @@ use futures::Stream;
 use rexecutor::{
     backend::{Backend, BackendError, EnqueuableJob, ExecutionError},
     executor::ExecutorIdentifier,
-    job::JobId,
+    job::{uniqueness_criteria::UniquenessCriteria, JobId},
 };
 use serde::Deserialize;
-use sqlx::{postgres::PgListener, types::Text, PgPool};
+use sqlx::{postgres::PgListener, types::Text, PgPool, Postgres, QueryBuilder, Row};
 use tokio::sync::{mpsc, RwLock};
 
 mod types;
@@ -82,11 +83,14 @@ impl Backend for RexecutorPgBackend {
             }
         })
     }
-    async fn enqueue(&self, job: EnqueuableJob) -> Result<JobId, BackendError> {
-        self.insert_job(job)
-            .await
-            // TODO error handling
-            .map_err(|_| BackendError::BadStateError)
+    async fn enqueue<'a>(&self, job: EnqueuableJob<'a>) -> Result<JobId, BackendError> {
+        if job.uniqueness_criteria.is_some() {
+            self.insert_unique_job(job).await
+        } else {
+            self.insert_job(job).await
+        }
+        // TODO error handling
+        .map_err(|_| BackendError::BadStateError)
     }
     async fn mark_job_complete(&self, id: JobId) -> Result<(), BackendError> {
         self._mark_job_complete(id)
@@ -267,7 +271,7 @@ impl RexecutorPgBackend {
         .await
     }
 
-    async fn insert_job(&self, job: EnqueuableJob) -> sqlx::Result<JobId> {
+    async fn insert_job<'a>(&self, job: EnqueuableJob<'a>) -> sqlx::Result<JobId> {
         let data = sqlx::query!(
             r#"INSERT INTO rexecutor_jobs (
                 executor,
@@ -287,6 +291,52 @@ impl RexecutorPgBackend {
         .fetch_one(self.deref())
         .await?;
         Ok(data.id.into())
+    }
+
+    async fn insert_unique_job<'a>(&self, job: EnqueuableJob<'a>) -> sqlx::Result<JobId> {
+        let Some(uniqueness_criteria) = job.uniqueness_criteria else {
+            panic!();
+        };
+        let mut tx = self.begin().await?;
+        let unique_identifier = uniqueness_criteria.unique_identifier(job.executor.as_str());
+        sqlx::query!("SELECT pg_advisory_xact_lock($1)", unique_identifier)
+            .execute(&mut *tx)
+            .await?;
+        match uniqueness_criteria
+            .query(unique_identifier, job.scheduled_at)
+            .build()
+            .fetch_optional(&mut *tx)
+            .await?
+        {
+            None => {
+                let data = sqlx::query!(
+                    r#"INSERT INTO rexecutor_jobs (
+                        executor,
+                        data,
+                        max_attempts,
+                        scheduled_at,
+                        tags,
+                        uniqueness_key
+                    ) VALUES ($1, $2, $3, $4, $5, $6)
+                    RETURNING id
+                    "#,
+                    job.executor,
+                    job.data,
+                    job.max_attempts as i32,
+                    job.scheduled_at,
+                    &job.tags,
+                    unique_identifier,
+                )
+                .fetch_one(&mut *tx)
+                .await?;
+                tx.commit().await?;
+                Ok(data.id.into())
+            }
+            Some(val) => {
+                tx.rollback().await?;
+                Ok(val.get::<i32, _>(0).into())
+            }
+        }
     }
 
     async fn _mark_job_complete(&self, id: JobId) -> sqlx::Result<()> {
@@ -424,6 +474,35 @@ impl RexecutorPgBackend {
     }
 }
 
+trait Unique {
+    fn unique_identifier(&self, executor_identifier: &'_ str) -> i64;
+    fn query(&self, key: i64, scheduled_at: DateTime<Utc>) -> QueryBuilder<'_, Postgres>;
+}
+
+impl<'a> Unique for UniquenessCriteria<'a> {
+    fn unique_identifier(&self, executor_identifier: &'_ str) -> i64 {
+        let mut state = fxhash::FxHasher64::default();
+        self.key.hash(&mut state);
+        if self.executor {
+            executor_identifier.hash(&mut state);
+        }
+        self.statuses.hash(&mut state);
+        state.finish() as i64
+    }
+
+    fn query(&self, key: i64, scheduled_at: DateTime<Utc>) -> QueryBuilder<'_, Postgres> {
+        let mut builder =
+            QueryBuilder::new("SELECT id FROM rexecutor_jobs WHERE uniqueness_key = ");
+        builder.push_bind(key);
+        if let Some(duration) = self.duration {
+            let cutoff = scheduled_at - duration;
+            builder.push(" AND scheduled_at >= ").push_bind(cutoff);
+        }
+
+        builder
+    }
+}
+
 #[cfg(test)]
 mod test {
     use super::*;
@@ -441,6 +520,7 @@ mod test {
                 max_attempts: 5,
                 scheduled_at,
                 tags: Default::default(),
+                uniqueness_criteria: None,
             };
 
             self.enqueue(job).await.unwrap()
@@ -526,6 +606,7 @@ mod test {
             max_attempts: 5,
             scheduled_at: Utc::now(),
             tags: Default::default(),
+            uniqueness_criteria: None,
         };
 
         let result = backend.enqueue(job).await;

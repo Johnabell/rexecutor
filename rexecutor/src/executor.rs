@@ -3,7 +3,7 @@ use chrono::Duration;
 use serde::{de::DeserializeOwned, Serialize};
 use std::{error::Error, fmt::Display};
 
-use crate::job::{builder::JobBuilder, Job};
+use crate::job::{builder::JobBuilder, uniqueness_criteria::UniquenessCriteria, Job};
 
 #[async_trait]
 pub trait Executor {
@@ -12,6 +12,7 @@ pub trait Executor {
     const MAX_ATTEMPTS: u16 = 5;
     const MAX_CONCURRENCY: Option<usize> = None;
     const BLOCKING: bool = false;
+    const UNIQUENESS_CRITERIA: Option<UniquenessCriteria<'static>> = None;
 
     async fn execute(job: Job<Self::Data>) -> ExecutionResult;
 
@@ -25,7 +26,7 @@ pub trait Executor {
         std::time::Duration::from_secs(3000)
     }
 
-    fn builder() -> JobBuilder<Self>
+    fn builder<'a>() -> JobBuilder<'a, Self>
     where
         Self: Sized,
         Self::Data: Serialize + DeserializeOwned,

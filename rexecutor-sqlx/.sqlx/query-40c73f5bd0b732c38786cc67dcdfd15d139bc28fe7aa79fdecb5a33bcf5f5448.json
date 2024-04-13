@@ -1,0 +1,27 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO rexecutor_jobs (\n                        executor,\n                        data,\n                        max_attempts,\n                        scheduled_at,\n                        tags,\n                        uniqueness_key\n                    ) VALUES ($1, $2, $3, $4, $5, $6)\n                    RETURNING id\n                    ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int4"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Varchar",
+        "Jsonb",
+        "Int4",
+        "Timestamptz",
+        "VarcharArray",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false
+    ]
+  },
+  "hash": "40c73f5bd0b732c38786cc67dcdfd15d139bc28fe7aa79fdecb5a33bcf5f5448"
+}

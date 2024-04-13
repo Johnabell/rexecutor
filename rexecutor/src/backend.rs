@@ -7,7 +7,7 @@ use thiserror::Error;
 
 use crate::{
     executor::ExecutorIdentifier,
-    job::{ErrorType, JobError, JobId, JobStatus},
+    job::{uniqueness_criteria::UniquenessCriteria, ErrorType, JobError, JobId, JobStatus},
 };
 #[async_trait]
 pub trait Backend: std::fmt::Debug {
@@ -15,7 +15,7 @@ pub trait Backend: std::fmt::Debug {
         &self,
         executor_identifier: ExecutorIdentifier,
     ) -> Pin<Box<dyn Stream<Item = Result<Job, BackendError>> + Send>>;
-    async fn enqueue(&self, job: EnqueuableJob) -> Result<JobId, BackendError>;
+    async fn enqueue<'a>(&self, job: EnqueuableJob<'a>) -> Result<JobId, BackendError>;
     async fn mark_job_complete(&self, id: JobId) -> Result<(), BackendError>;
     async fn mark_job_retryable(
         &self,
@@ -49,12 +49,13 @@ pub struct ExecutionError {
 // TODO: should this be non_exhaustive?
 // #[non_exhaustive]
 #[derive(Debug)]
-pub struct EnqueuableJob {
+pub struct EnqueuableJob<'a> {
     pub executor: String,
     pub data: serde_json::Value,
     pub max_attempts: u16,
     pub scheduled_at: DateTime<Utc>,
     pub tags: Vec<String>,
+    pub uniqueness_criteria: Option<UniquenessCriteria<'a>>,
 }
 
 #[derive(Debug)]
@@ -113,7 +114,7 @@ pub(crate) mod test {
         ) -> Pin<Box<dyn Stream<Item = Result<Job, BackendError>> + Send>> {
             Box::pin(futures::stream::empty())
         }
-        async fn enqueue(&self, _job: EnqueuableJob) -> Result<JobId, BackendError> {
+        async fn enqueue<'a>(&self, _job: EnqueuableJob<'a>) -> Result<JobId, BackendError> {
             self.enqueue_return
                 .lock()
                 .unwrap()

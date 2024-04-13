@@ -1,6 +1,7 @@
 use crate::{
     backend::{Backend, EnqueuableJob},
     executor::Executor,
+    job::uniqueness_criteria::UniquenessCriteria,
     RexecuterError, GLOBAL_BACKEND,
 };
 use chrono::{DateTime, Duration, Utc};
@@ -8,7 +9,7 @@ use serde::{de::DeserializeOwned, Serialize};
 
 use super::JobId;
 
-pub struct JobBuilder<E>
+pub struct JobBuilder<'a, E>
 where
     E: Executor + 'static,
     E::Data: Serialize + DeserializeOwned,
@@ -17,9 +18,10 @@ where
     max_attempts: Option<u16>,
     tags: Vec<String>,
     scheduled_at: DateTime<Utc>,
+    uniqueness_criteria: Option<UniquenessCriteria<'a>>,
 }
 
-impl<E> Default for JobBuilder<E>
+impl<'a, E> Default for JobBuilder<'a, E>
 where
     E: Executor,
     E::Data: Serialize + DeserializeOwned,
@@ -30,11 +32,12 @@ where
             max_attempts: None,
             tags: Default::default(),
             scheduled_at: Utc::now(),
+            uniqueness_criteria: None,
         }
     }
 }
 
-impl<E> JobBuilder<E>
+impl<'a, E> JobBuilder<'a, E>
 where
     E: Executor,
     E::Data: Serialize + DeserializeOwned,
@@ -74,8 +77,11 @@ where
         Self { tags, ..self }
     }
     // TODO: add a function to ensure uniqueness of jobs
-    pub fn unique(self) -> Self {
-        self
+    pub fn unique(self, criteria: UniquenessCriteria<'a>) -> Self {
+        Self {
+            uniqueness_criteria: Some(criteria),
+            ..self
+        }
     }
     // TODO: add optional metadata
     pub fn metadata(self) -> Self {
@@ -86,22 +92,15 @@ where
     where
         E::Data: 'static + Send,
     {
-        let job_id = GLOBAL_BACKEND
-            .get()
-            .ok_or(RexecuterError::GlobalBackend)?
-            .enqueue(EnqueuableJob {
-                data: serde_json::to_value(self.data)?,
-                executor: E::NAME.to_owned(),
-                max_attempts: self.max_attempts.unwrap_or(E::MAX_ATTEMPTS),
-                scheduled_at: self.scheduled_at,
-                tags: self.tags,
-            })
-            .await?;
+        let backend = GLOBAL_BACKEND.get().ok_or(RexecuterError::GlobalBackend)?;
 
-        Ok(job_id)
+        self.enqueue_to_backend(backend.as_ref()).await
     }
 
-    pub async fn enqueue_to_backend<B: Backend>(self, backend: &B) -> Result<JobId, RexecuterError>
+    pub async fn enqueue_to_backend<B: Backend + ?Sized>(
+        self,
+        backend: &B,
+    ) -> Result<JobId, RexecuterError>
     where
         E::Data: 'static + Send,
     {
@@ -112,6 +111,7 @@ where
                 max_attempts: self.max_attempts.unwrap_or(E::MAX_ATTEMPTS),
                 scheduled_at: self.scheduled_at,
                 tags: self.tags,
+                uniqueness_criteria: self.uniqueness_criteria.or(E::UNIQUENESS_CRITERIA),
             })
             .await?;
 
