@@ -11,13 +11,28 @@ pub struct UniquenessCriteria<'a> {
     pub statuses: &'a [JobStatus],
 }
 
+impl UniquenessCriteria<'static> {
+    pub const fn default_const() -> Self {
+        Self {
+            key: None,
+            executor: false,
+            duration: None,
+            statuses: &[],
+        }
+    }
+}
+
 impl<'a> UniquenessCriteria<'a> {
-    pub const NONE: Self = Self {
-        key: None,
-        executor: false,
-        duration: None,
-        statuses: &[],
-    };
+    pub const NONE: Self = Self::new();
+
+    pub const fn new() -> Self {
+        Self {
+            key: None,
+            executor: false,
+            duration: None,
+            statuses: &[],
+        }
+    }
 
     pub const fn by_executor(mut self) -> Self {
         self.executor = true;

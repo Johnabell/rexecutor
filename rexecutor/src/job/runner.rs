@@ -34,13 +34,19 @@ where
             _executor: PhantomData,
         }
     }
-
     #[instrument(skip(self, job), fields(job_id))]
     pub async fn execute_job(&self, job: Job<E::Data>) {
+        match E::timeout(&job) {
+            Some(timeout) => self.execute_job_with_timeout(job, timeout).await,
+            None => self.execute_job_without_timeout(job).await,
+        }
+    }
+
+    #[instrument(skip(self, job), fields(job_id))]
+    pub async fn execute_job_with_timeout(&self, job: Job<E::Data>, timeout: Duration) {
         let is_final_attempt = job.is_final_attempt();
         let job_id = job.id;
         let delay = E::backoff(&job);
-        let timeout = E::timeout(&job);
 
         tracing::Span::current().record("job_id", &tracing::field::debug(&job_id));
 
@@ -67,6 +73,40 @@ where
             }
             Ok(Err(_elaped)) => {
                 self.handle_job_error(is_final_attempt, job_id, delay, timeout)
+                    .await
+            }
+            Err(error) => {
+                self.handle_job_error(is_final_attempt, job_id, delay, error)
+                    .await
+            }
+        }
+    }
+
+    #[instrument(skip(self, job), fields(job_id))]
+    pub async fn execute_job_without_timeout(&self, job: Job<E::Data>) {
+        let is_final_attempt = job.is_final_attempt();
+        let job_id = job.id;
+        let delay = E::backoff(&job);
+
+        tracing::Span::current().record("job_id", &tracing::field::debug(&job_id));
+
+        let fut = E::execute(job).in_current_span();
+        let result = if E::BLOCKING {
+            tracing::debug!(%job_id, "Executing blocking job {job_id}");
+            tokio::task::spawn_blocking(|| futures::executor::block_on(fut))
+        } else {
+            tracing::debug!(%job_id, "Executing job {job_id}");
+            tokio::spawn(fut)
+        };
+
+        match result.await {
+            Ok(ExecutionResult::Done) => self.handle_job_complete(job_id).await,
+            Ok(ExecutionResult::Cancelled { reason }) => {
+                self.handle_job_cancelled(job_id, reason).await
+            }
+            Ok(ExecutionResult::Snooze { delay }) => self.handle_job_snoozed(job_id, delay).await,
+            Ok(ExecutionResult::Error { error }) => {
+                self.handle_job_error(is_final_attempt, job_id, delay, error)
                     .await
             }
             Err(error) => {

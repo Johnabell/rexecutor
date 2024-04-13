@@ -21,9 +21,8 @@ pub trait Executor {
         Duration::seconds(10 * job.attempt as i64 + 1)
     }
 
-    // TODO: make Option
-    fn timeout(_job: &Job<Self::Data>) -> std::time::Duration {
-        std::time::Duration::from_secs(3000)
+    fn timeout(_job: &Job<Self::Data>) -> Option<std::time::Duration> {
+        None
     }
 
     fn builder<'a>() -> JobBuilder<'a, Self>

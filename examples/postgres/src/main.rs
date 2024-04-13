@@ -5,7 +5,7 @@ use async_trait::async_trait;
 use chrono::TimeDelta;
 use rexecutor::{
     executor::{ExecutionError, ExecutionResult, Executor},
-    job::Job,
+    job::{uniqueness_criteria::UniquenessCriteria, Job},
     Rexecuter,
 };
 use rexecutor_sqlx::RexecutorPgBackend;
@@ -154,8 +154,8 @@ impl Executor for TimeoutJob {
         TimeDelta::seconds(1)
     }
 
-    fn timeout(job: &Job<Self::Data>) -> Duration {
-        Duration::from_millis(10 * job.attempt as u64)
+    fn timeout(job: &Job<Self::Data>) -> Option<Duration> {
+        Some(Duration::from_millis(10 * job.attempt as u64))
     }
 }
 
@@ -181,6 +181,11 @@ impl Executor for SnoozeJob {
     type Data = ();
     const NAME: &'static str = "snooze_job";
     const MAX_ATTEMPTS: u16 = 1;
+    const UNIQUENESS_CRITERIA: Option<UniquenessCriteria<'static>> = Some(
+        UniquenessCriteria::new()
+            .by_executor()
+            .by_duration(TimeDelta::seconds(60)),
+    );
     async fn execute(job: Job<Self::Data>) -> ExecutionResult {
         println!("{} running, with args: {:?}", Self::NAME, job.data);
         if (job.scheduled_at - job.inserted_at).num_seconds() < 1 {

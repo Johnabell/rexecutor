@@ -233,8 +233,7 @@ impl RexecutorPgBackend {
         &self,
         executor: &str,
     ) -> sqlx::Result<Option<Job>> {
-        // TODO the condition here should probably simply be not executing, unless we want a
-        // special mechanism for handling rerunning cancelled, completed, and discarded jobs.
+        // TODO implement special mechanism for rerunning cancelled, completed, and discarded jobs.
         sqlx::query_as!(
             Job,
             r#"UPDATE rexecutor_jobs
