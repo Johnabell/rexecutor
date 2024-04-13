@@ -16,7 +16,11 @@ use rexecutor::{
     job::{uniqueness_criteria::UniquenessCriteria, JobId},
 };
 use serde::Deserialize;
-use sqlx::{postgres::PgListener, types::Text, PgPool, Postgres, QueryBuilder, Row};
+use sqlx::{
+    postgres::{PgListener, PgPoolOptions},
+    types::Text,
+    PgPool, Postgres, QueryBuilder, Row,
+};
 use tokio::sync::{mpsc, RwLock};
 
 mod types;
@@ -36,24 +40,6 @@ impl std::ops::Deref for RexecutorPgBackend {
 
     fn deref(&self) -> &Self::Target {
         &self.pool
-    }
-}
-
-impl From<PgPool> for RexecutorPgBackend {
-    fn from(pool: PgPool) -> Self {
-        Self {
-            pool,
-            subscribers: Default::default(),
-        }
-    }
-}
-
-impl From<&PgPool> for RexecutorPgBackend {
-    fn from(value: &PgPool) -> Self {
-        Self {
-            pool: value.to_owned(),
-            subscribers: Default::default(),
-        }
     }
 }
 
@@ -190,7 +176,15 @@ use tracing::instrument;
 use types::*;
 
 impl RexecutorPgBackend {
-    pub async fn new(pool: PgPool) -> Result<Self, BackendError> {
+    /// Creates a new [RexecutorPgBackend] from a db connection string.
+    pub async fn from_db_url(db_url: &str) -> Result<Self, BackendError> {
+        let pool = PgPoolOptions::new()
+            .connect(db_url)
+            .await
+            .map_err(|_| BackendError::BadStateError)?;
+        Self::from_pool(pool).await
+    }
+    pub async fn from_pool(pool: PgPool) -> Result<Self, BackendError> {
         let this = Self {
             pool,
             subscribers: Default::default(),

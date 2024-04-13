@@ -9,7 +9,6 @@ use rexecutor::{
     Rexecuter,
 };
 use rexecutor_sqlx::RexecutorPgBackend;
-use sqlx::postgres::PgPoolOptions;
 
 const DEFAULT_DATABASE_URL: &str = "postgresql://postgres:postgres@localhost:5432/postgres";
 const DATABASE_URL: &str = "DATABASE_URL";
@@ -21,18 +20,17 @@ pub async fn main() {
         .with_max_level(tracing::Level::TRACE)
         .init();
 
-    let pool = PgPoolOptions::new().connect(&db_url).await.unwrap();
-    let backend = RexecutorPgBackend::new(pool).await.unwrap();
-    let schedule = cron::Schedule::try_from("* * * * * *").unwrap();
+    let backend = RexecutorPgBackend::from_db_url(&db_url).await.unwrap();
+    let every_second = cron::Schedule::try_from("* * * * * *").unwrap();
 
-    let handle = Rexecuter::new(backend.clone())
+    let handle = Rexecuter::new(backend)
         .with_executor::<BasicJob>()
         .with_executor::<TimeoutJob>()
         .with_executor::<CancelledJob>()
         .with_executor::<SnoozeJob>()
         .with_executor::<FlakyJob>()
-        .with_cron_executor::<CronJob>(schedule.clone(), "tick".to_owned())
-        .with_cron_executor::<CronJob>(schedule, "tock".to_owned())
+        .with_cron_executor::<CronJob>(every_second.clone(), "tick".to_owned())
+        .with_cron_executor::<CronJob>(every_second, "tock".to_owned())
         .set_global_backend()
         .unwrap();
 
