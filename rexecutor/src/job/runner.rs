@@ -1,13 +1,15 @@
 use std::{marker::PhantomData, time::Duration};
 
 use chrono::{TimeDelta, Utc};
+use futures::StreamExt;
 use serde::de::DeserializeOwned;
-use tokio::task::JoinError;
+use tokio::{task::JoinError, sync::mpsc};
 use tracing::{instrument, Instrument};
 
 use crate::{
     backend::Backend,
     executor::{CancellationReason, ExecutionError, ExecutionResult, Executor},
+    ExecutorHandle,
 };
 
 use super::{ErrorType, Job, JobId};
@@ -24,8 +26,8 @@ where
 
 impl<B, E> JobRunner<B, E>
 where
-    B: Backend + Send + 'static + Sync,
-    E: Executor + 'static + Sync,
+    B: Backend + Send + 'static + Sync + Clone,
+    E: Executor + 'static + Sync + Send,
     E::Data: Send + DeserializeOwned,
 {
     pub(crate) fn new(backend: B) -> Self {
@@ -34,6 +36,39 @@ where
             _executor: PhantomData,
         }
     }
+
+    pub(crate) fn spawn(self) -> ExecutorHandle {
+        let (sender, mut rx) = mpsc::unbounded_channel();
+
+        let handle = tokio::spawn({
+            async move {
+                self.backend
+                    .subscribe_new_events(E::NAME.into())
+                    .await
+                    .take_until(rx.recv())
+                    .for_each_concurrent(E::MAX_CONCURRENCY, {
+                        |message| async {
+                            match message {
+                                Ok(job) => match job.try_into() {
+                                    Ok(job) => self.execute_job(job).await,
+                                    Err(error) => {
+                                        tracing::error!(?error, "Failed to decode job: {error}")
+                                    }
+                                },
+                                _ => tracing::warn!("Failed to get from stream"),
+                            }
+                        }
+                    })
+                    .await;
+                tracing::debug!("Shutting down Rexecutor job runner for {}", E::NAME);
+            }
+        });
+        ExecutorHandle {
+            sender,
+            handle: Some(handle),
+        }
+    }
+
     #[instrument(skip(self, job), fields(job_id))]
     pub async fn execute_job(&self, job: Job<E::Data>) {
         match E::timeout(&job) {

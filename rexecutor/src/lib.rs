@@ -4,12 +4,10 @@ pub mod backend;
 pub mod backoff;
 pub mod executor;
 pub mod job;
-pub mod notifier;
 
 use backend::{Backend, BackendError};
 use chrono::{TimeDelta, Utc};
 use executor::Executor;
-use futures::StreamExt;
 use job::runner::JobRunner;
 use serde::{de::DeserializeOwned, Serialize};
 use thiserror::Error;
@@ -68,10 +66,6 @@ enum Message {
     Terminate,
 }
 
-enum WakeMessage {
-    Wake,
-}
-
 impl<B> Rexecuter<B, GlobalUnset>
 where
     B: Backend,
@@ -120,39 +114,9 @@ where
         E: Executor + 'static + Sync + Send,
         E::Data: Send + DeserializeOwned,
     {
-        let (sender, mut rx) = mpsc::unbounded_channel();
+        let handle = JobRunner::<B, E>::new(self.backend.clone()).spawn();
+        self.executors.push(handle);
 
-        let handle = tokio::spawn({
-            let backend = self.backend.clone();
-            async move {
-                backend
-                    .clone()
-                    .subscribe_new_events(E::NAME.into())
-                    .await
-                    .take_until(rx.recv())
-                    .for_each_concurrent(E::MAX_CONCURRENCY, {
-                        |message| async {
-                            let runner = JobRunner::<B, E>::new(backend.clone());
-                            match message {
-                                Ok(job) => match job.try_into() {
-                                    Ok(job) => runner.execute_job(job).await,
-                                    Err(error) => {
-                                        tracing::error!(?error, "Failed to decode job: {error}")
-                                    }
-                                },
-                                _ => tracing::warn!("Failed to get from stream"),
-                            }
-                        }
-                    })
-                    .await;
-                tracing::debug!("Shutting down Rexecutor job runner for {}", E::NAME);
-            }
-        });
-
-        self.executors.push(ExecutorHandle {
-            sender,
-            handle: Some(handle),
-        });
         self
     }
 
