@@ -24,6 +24,7 @@ pub async fn main() {
     let every_second = cron::Schedule::try_from("* * * * * *").unwrap();
 
     let backend = RexecutorPgBackend::from_db_url(&db_url).await.unwrap();
+    backend.run_migrations().await.unwrap();
 
     let handle = Rexecuter::new(backend)
         .with_executor::<BasicJob>()

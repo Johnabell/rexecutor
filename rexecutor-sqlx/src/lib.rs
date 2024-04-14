@@ -27,7 +27,6 @@ mod types;
 
 type Subscriber = mpsc::UnboundedSender<DateTime<Utc>>;
 
-// TODO: add function to run migrations
 #[derive(Clone, Debug)]
 pub struct RexecutorPgBackend {
     pool: PgPool,
@@ -222,6 +221,14 @@ impl RexecutorPgBackend {
         });
 
         Ok(this)
+    }
+
+    pub async fn run_migrations(&self) -> Result<(), BackendError> {
+        tracing::info!("Running RexecutorPgBackend migrations");
+        sqlx::migrate!()
+            .run(&self.pool)
+            .await
+            .map_err(|_| BackendError::BadStateError)
     }
 
     async fn load_job_mark_as_executing_for_executor(
