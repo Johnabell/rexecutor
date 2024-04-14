@@ -4,6 +4,7 @@ use std::time::Duration;
 use async_trait::async_trait;
 use chrono::TimeDelta;
 use rexecutor::{
+    backoff::{BackoffStrategy, Jitter, Strategy},
     executor::{ExecutionError, ExecutionResult, Executor},
     job::{uniqueness_criteria::UniquenessCriteria, Job},
     Rexecuter,
@@ -20,8 +21,9 @@ pub async fn main() {
         .with_max_level(tracing::Level::TRACE)
         .init();
 
-    let backend = RexecutorPgBackend::from_db_url(&db_url).await.unwrap();
     let every_second = cron::Schedule::try_from("* * * * * *").unwrap();
+
+    let backend = RexecutorPgBackend::from_db_url(&db_url).await.unwrap();
 
     let handle = Rexecuter::new(backend)
         .with_executor::<BasicJob>()
@@ -131,8 +133,10 @@ impl Executor for FlakyJob {
             _ => ExecutionResult::Done,
         }
     }
-    fn backoff(_job: &Job<Self::Data>) -> TimeDelta {
-        TimeDelta::seconds(1)
+    fn backoff(job: &Job<Self::Data>) -> TimeDelta {
+        BackoffStrategy::constant(TimeDelta::seconds(1))
+            .with_jitter(Jitter::Relative(0.5))
+            .backoff(job.attempt)
     }
 }
 
@@ -149,8 +153,10 @@ impl Executor for TimeoutJob {
         ExecutionResult::Done
     }
 
-    fn backoff(_job: &Job<Self::Data>) -> TimeDelta {
-        TimeDelta::seconds(1)
+    fn backoff(job: &Job<Self::Data>) -> TimeDelta {
+        BackoffStrategy::linear(TimeDelta::seconds(1))
+            .with_jitter(Jitter::Absolute(TimeDelta::milliseconds(500)))
+            .backoff(job.attempt)
     }
 
     fn timeout(job: &Job<Self::Data>) -> Option<Duration> {

@@ -1,9 +1,17 @@
 use async_trait::async_trait;
-use chrono::Duration;
+use chrono::{Duration, TimeDelta};
 use serde::{de::DeserializeOwned, Serialize};
 use std::{error::Error, fmt::Display};
 
-use crate::job::{builder::JobBuilder, uniqueness_criteria::UniquenessCriteria, Job};
+use crate::{
+    backoff::{BackoffStrategy, Exponential, Jitter, Strategy},
+    job::{builder::JobBuilder, uniqueness_criteria::UniquenessCriteria, Job},
+};
+
+const DEFAULT_BACKOFF_STRATEGY: BackoffStrategy<Exponential> =
+    BackoffStrategy::exponential(TimeDelta::seconds(4))
+        .with_max(TimeDelta::days(7))
+        .with_jitter(Jitter::Relative(0.1));
 
 #[async_trait]
 pub trait Executor {
@@ -16,9 +24,8 @@ pub trait Executor {
 
     async fn execute(job: Job<Self::Data>) -> ExecutionResult;
 
-    // TODO: make module for different backoff strategies
     fn backoff(job: &Job<Self::Data>) -> Duration {
-        Duration::seconds(10 * job.attempt as i64 + 1)
+        DEFAULT_BACKOFF_STRATEGY.backoff(job.attempt)
     }
 
     fn timeout(_job: &Job<Self::Data>) -> Option<std::time::Duration> {

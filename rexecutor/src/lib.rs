@@ -1,6 +1,7 @@
 use std::{hash::Hash, marker::PhantomData, ops::Sub, sync::Arc, time::Duration};
 
 pub mod backend;
+pub mod backoff;
 pub mod executor;
 pub mod job;
 pub mod notifier;

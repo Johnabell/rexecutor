@@ -27,6 +27,7 @@ mod types;
 
 type Subscriber = mpsc::UnboundedSender<DateTime<Utc>>;
 
+// TODO: add function to run migrations
 #[derive(Clone, Debug)]
 pub struct RexecutorPgBackend {
     pool: PgPool,
@@ -510,6 +511,15 @@ mod test {
     use sqlx::PgPool;
 
     const EXECUTOR: &str = "executor";
+
+    impl From<PgPool> for RexecutorPgBackend {
+        fn from(pool: PgPool) -> Self {
+            Self {
+                pool,
+                subscribers: Default::default(),
+            }
+        }
+    }
 
     impl RexecutorPgBackend {
         async fn with_mock_job(&self, scheduled_at: DateTime<Utc>) -> JobId {

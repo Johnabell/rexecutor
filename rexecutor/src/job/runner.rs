@@ -46,6 +46,7 @@ where
     pub async fn execute_job_with_timeout(&self, job: Job<E::Data>, timeout: Duration) {
         let is_final_attempt = job.is_final_attempt();
         let job_id = job.id;
+        // This should really be the status of the job after the execution
         let delay = E::backoff(&job);
 
         tracing::Span::current().record("job_id", &tracing::field::debug(&job_id));
@@ -86,6 +87,7 @@ where
     pub async fn execute_job_without_timeout(&self, job: Job<E::Data>) {
         let is_final_attempt = job.is_final_attempt();
         let job_id = job.id;
+        // This should really be the status of the job after the execution
         let delay = E::backoff(&job);
 
         tracing::Span::current().record("job_id", &tracing::field::debug(&job_id));
