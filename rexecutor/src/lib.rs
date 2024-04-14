@@ -1,12 +1,13 @@
-use std::{hash::Hash, marker::PhantomData, ops::Sub, sync::Arc, time::Duration};
+use std::{hash::Hash, marker::PhantomData, sync::Arc};
 
 pub mod backend;
 pub mod backoff;
+mod cron_runner;
 pub mod executor;
 pub mod job;
 
 use backend::{Backend, BackendError};
-use chrono::{TimeDelta, Utc};
+use cron_runner::CronRunner;
 use executor::Executor;
 use job::runner::JobRunner;
 use serde::{de::DeserializeOwned, Serialize};
@@ -15,8 +16,6 @@ use tokio::{
     sync::{mpsc, OnceCell},
     task::JoinHandle,
 };
-
-use crate::job::uniqueness_criteria::UniquenessCriteria;
 
 trait InternalRexecutorState {}
 
@@ -123,56 +122,10 @@ where
     pub fn with_cron_executor<E>(mut self, schedule: cron::Schedule, data: E::Data) -> Self
     where
         E: Executor + 'static + Sync + Send,
-        E::Data: Send + Serialize + DeserializeOwned + Clone + Hash,
+        E::Data: Send + Sync + Serialize + DeserializeOwned + Clone + Hash,
     {
-        let (sender, mut rx) = mpsc::unbounded_channel();
-        let handle = tokio::spawn({
-            let backend = self.backend.clone();
-            async move {
-                loop {
-                    let next = schedule
-                        .upcoming(Utc)
-                        .next()
-                        .expect("No future scheduled time for cron job");
-                    let delay = next
-                        .sub(Utc::now())
-                        .sub(TimeDelta::milliseconds(10))
-                        .to_std()
-                        .unwrap_or(Duration::ZERO);
-                    tokio::select! {
-                        _ = tokio::time::sleep(delay) => {
-                            let criteria = UniquenessCriteria::default()
-                                .by_duration(TimeDelta::zero())
-                                .by_key(&data)
-                                .by_executor();
-
-                            let _ = E::builder()
-                                .schedule_at(next)
-                                .with_data(data.clone())
-                                .unique(criteria)
-                                .enqueue_to_backend(&backend)
-                                .await
-                                .inspect_err(|err| {
-                                    tracing::error!(?err, "Failed to enqueue cron job {} with {err}", E::NAME);
-                                });
-                            let delay = next - Utc::now();
-                            if delay > TimeDelta::zero() {
-                                tokio::time::sleep(delay.to_std().unwrap()).await;
-                            }
-                        },
-                        _ = rx.recv() => {
-                            break;
-                        },
-                    }
-                }
-                tracing::debug!("Shutting down cron scheduler for {}", E::NAME);
-            }
-        });
-
-        self.executors.push(ExecutorHandle {
-            sender,
-            handle: Some(handle),
-        });
+        let handle = CronRunner::<B, E>::new(self.backend.clone(), schedule, data).spawn();
+        self.executors.push(handle);
 
         self.with_executor::<E>()
     }
