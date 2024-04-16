@@ -3,7 +3,7 @@ use std::{marker::PhantomData, time::Duration};
 use chrono::{TimeDelta, Utc};
 use futures::StreamExt;
 use serde::de::DeserializeOwned;
-use tokio::{task::JoinError, sync::mpsc};
+use tokio::{sync::mpsc, task::JoinError};
 use tracing::{instrument, Instrument};
 
 use crate::{

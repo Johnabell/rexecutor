@@ -6,7 +6,8 @@ use chrono::TimeDelta;
 use rexecutor::{
     backoff::{BackoffStrategy, Jitter, Strategy},
     executor::{ExecutionError, ExecutionResult, Executor},
-    job::{uniqueness_criteria::UniquenessCriteria, Job},
+    job::{uniqueness_criteria::UniquenessCriteria, Job, JobStatus},
+    pruner::{Pruner, PrunerConfig},
     Rexecuter,
 };
 use rexecutor_sqlx::RexecutorPgBackend;
@@ -21,6 +22,14 @@ pub async fn main() {
         .with_max_level(tracing::Level::TRACE)
         .init();
 
+    let pruner_config = PrunerConfig::new("0/2 * * * * *".try_into().unwrap())
+        .with_pruner(Pruner::max_length(20, JobStatus::Complete).only::<CronJob>())
+        .with_pruner(Pruner::max_age(TimeDelta::days(1), JobStatus::Complete).except::<CronJob>())
+        .with_pruners([
+            Pruner::max_age(TimeDelta::days(2), JobStatus::Discarded),
+            Pruner::max_age(TimeDelta::days(2), JobStatus::Cancelled),
+        ]);
+
     let every_second = cron::Schedule::try_from("* * * * * *").unwrap();
 
     let backend = RexecutorPgBackend::from_db_url(&db_url).await.unwrap();
@@ -34,6 +43,7 @@ pub async fn main() {
         .with_executor::<FlakyJob>()
         .with_cron_executor::<CronJob>(every_second.clone(), "tick".to_owned())
         .with_cron_executor::<CronJob>(every_second, "tock".to_owned())
+        .with_job_pruner(pruner_config)
         .set_global_backend()
         .unwrap();
 

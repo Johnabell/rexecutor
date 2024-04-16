@@ -109,4 +109,16 @@ pub(crate) mod test {
             ExecutionResult::Done
         }
     }
+
+    pub(crate) struct BasicExecutor;
+
+    #[async_trait]
+    impl Executor for BasicExecutor {
+        type Data = String;
+        const NAME: &'static str = "simple_executor";
+        const MAX_ATTEMPTS: u16 = 2;
+        async fn execute(_job: Job<Self::Data>) -> ExecutionResult {
+            ExecutionResult::Done
+        }
+    }
 }

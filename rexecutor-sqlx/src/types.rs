@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 
 #[derive(sqlx::Type, Debug, Clone, Copy, Serialize)]
 #[cfg_attr(test, derive(PartialEq))]
-#[sqlx(type_name = "rexecutor_job_status", rename_all = "lowercase")]
+#[sqlx(type_name = "rexecutor_job_state", rename_all = "lowercase")]
 pub(crate) enum JobStatus {
     Complete,
     Executing,
@@ -25,6 +25,19 @@ impl From<JobStatus> for rexecutor::job::JobStatus {
             JobStatus::Retryable => Self::Retryable,
             JobStatus::Cancelled => Self::Cancelled,
             JobStatus::Discarded => Self::Discarded,
+        }
+    }
+}
+
+impl From<rexecutor::job::JobStatus> for JobStatus {
+    fn from(value: rexecutor::job::JobStatus) -> Self {
+        match value {
+            rexecutor::job::JobStatus::Complete => Self::Complete,
+            rexecutor::job::JobStatus::Executing => Self::Executing,
+            rexecutor::job::JobStatus::Scheduled => Self::Scheduled,
+            rexecutor::job::JobStatus::Retryable => Self::Retryable,
+            rexecutor::job::JobStatus::Cancelled => Self::Cancelled,
+            rexecutor::job::JobStatus::Discarded => Self::Discarded,
         }
     }
 }

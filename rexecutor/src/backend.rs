@@ -8,6 +8,7 @@ use thiserror::Error;
 use crate::{
     executor::ExecutorIdentifier,
     job::{uniqueness_criteria::UniquenessCriteria, ErrorType, JobError, JobId, JobStatus},
+    pruner::PruneSpec,
 };
 #[async_trait]
 pub trait Backend: std::fmt::Debug {
@@ -38,6 +39,7 @@ pub trait Backend: std::fmt::Debug {
         id: JobId,
         next_scheduled_at: DateTime<Utc>,
     ) -> Result<(), BackendError>;
+    async fn prune_jobs(&self, prune_spec: &PruneSpec) -> Result<(), BackendError>;
 }
 
 #[derive(Debug)]
@@ -153,6 +155,9 @@ pub(crate) mod test {
             _id: JobId,
             _next_scheduled_at: DateTime<Utc>,
         ) -> Result<(), BackendError> {
+            Ok(())
+        }
+        async fn prune_jobs(&self, _spec: &PruneSpec) -> Result<(), BackendError> {
             Ok(())
         }
     }

@@ -14,6 +14,7 @@ use rexecutor::{
     backend::{Backend, BackendError, EnqueuableJob, ExecutionError},
     executor::ExecutorIdentifier,
     job::{uniqueness_criteria::UniquenessCriteria, JobId},
+    pruner::{PruneBy, PruneSpec, Spec},
 };
 use serde::Deserialize;
 use sqlx::{
@@ -117,6 +118,11 @@ impl Backend for RexecutorPgBackend {
         next_scheduled_at: DateTime<Utc>,
     ) -> Result<(), BackendError> {
         self._mark_job_snoozed(id, next_scheduled_at)
+            .await
+            .map_err(|_| BackendError::BadStateError)
+    }
+    async fn prune_jobs(&self, spec: &PruneSpec) -> Result<(), BackendError> {
+        self.delete_from_spec(spec)
             .await
             .map_err(|_| BackendError::BadStateError)
     }
@@ -479,6 +485,16 @@ impl RexecutorPgBackend {
         .await?
         .map(|data| data.scheduled_at))
     }
+
+    async fn delete_from_spec(&self, spec: &PruneSpec) -> sqlx::Result<()> {
+        let result = spec.query().build().execute(self.deref()).await?;
+        tracing::debug!(
+            ?spec,
+            "Clean up query completed {} rows removed",
+            result.rows_affected()
+        );
+        Ok(())
+    }
 }
 
 trait Unique {
@@ -505,6 +521,59 @@ impl<'a> Unique for UniquenessCriteria<'a> {
             let cutoff = scheduled_at - duration;
             builder.push(" AND scheduled_at >= ").push_bind(cutoff);
         }
+
+        builder
+    }
+}
+
+trait ToQuery {
+    fn query(&self) -> QueryBuilder<'_, Postgres>;
+}
+
+impl ToQuery for PruneSpec {
+    fn query(&self) -> QueryBuilder<'_, Postgres> {
+        let status: JobStatus = self.status.into();
+        let mut builder = QueryBuilder::new("DELETE FROM rexecutor_jobs WHERE id in (");
+        builder.push("SELECT id FROM rexecutor_jobs WHERE status = ");
+        builder.push_bind::<JobStatus>(status);
+        match &self.executors {
+            Spec::Except(executors) => {
+                builder.push(" AND executor != ALL(");
+                builder.push_bind(executors);
+            }
+            Spec::Only(executors) => {
+                builder.push(" AND executor = ANY(");
+                builder.push_bind(executors);
+            }
+        }
+        builder.push(")");
+        let in_past = match status {
+            JobStatus::Scheduled | JobStatus::Retryable | JobStatus::Executing => false,
+            JobStatus::Complete | JobStatus::Cancelled | JobStatus::Discarded => true,
+        };
+        match self.prune_by {
+            PruneBy::MaxAge(time) => {
+                builder.push(" AND inserted_at");
+                if in_past {
+                    builder.push(" < ");
+                    builder.push_bind(Utc::now() - time);
+                } else {
+                    builder.push(" > ");
+                    builder.push_bind(Utc::now() + time);
+                }
+            }
+            PruneBy::MaxLength(count) => {
+                builder.push(" ORDER BY inserted_at");
+                if in_past {
+                    builder.push(" ASC ");
+                } else {
+                    builder.push(" DESC ");
+                }
+                builder.push("OFFSET ");
+                builder.push_bind(count as i64);
+            }
+        }
+        builder.push(")");
 
         builder
     }
@@ -570,6 +639,56 @@ mod test {
     }
 
     // TODO: add tests for ignoring running, cancelled, complete, and discarded jobs
+    #[test]
+    fn to_query_test() {
+        let spec = PruneSpec {
+            status: JobStatus::Complete.into(),
+            prune_by: PruneBy::MaxAge(TimeDelta::hours(2)),
+            executors: Spec::Only(vec!["simple_job"]),
+        };
+
+        assert_eq!(
+            spec.query().into_sql(),
+            "DELETE FROM rexecutor_jobs WHERE id in (SELECT id FROM rexecutor_jobs \
+            WHERE status = $1 AND executor = ANY($2) AND inserted_at < $3)"
+        );
+
+        let spec = PruneSpec {
+            status: JobStatus::Complete.into(),
+            prune_by: PruneBy::MaxLength(10),
+            executors: Spec::Only(vec!["simple_job"]),
+        };
+
+        assert_eq!(
+            spec.query().into_sql(),
+            "DELETE FROM rexecutor_jobs WHERE id in (SELECT id FROM rexecutor_jobs \
+            WHERE status = $1 AND executor = ANY($2) ORDER BY inserted_at ASC OFFSET $3)"
+        );
+
+        let spec = PruneSpec {
+            status: JobStatus::Complete.into(),
+            prune_by: PruneBy::MaxLength(10),
+            executors: Spec::Except(vec!["simple_job"]),
+        };
+
+        assert_eq!(
+            spec.query().into_sql(),
+            "DELETE FROM rexecutor_jobs WHERE id in (SELECT id FROM rexecutor_jobs \
+            WHERE status = $1 AND executor != ALL($2) ORDER BY inserted_at ASC OFFSET $3)"
+        );
+
+        let spec = PruneSpec {
+            status: JobStatus::Complete.into(),
+            prune_by: PruneBy::MaxAge(TimeDelta::days(1)),
+            executors: Spec::Except(vec!["simple_job"]),
+        };
+
+        assert_eq!(
+            spec.query().into_sql(),
+            "DELETE FROM rexecutor_jobs WHERE id in (SELECT id FROM rexecutor_jobs \
+            WHERE status = $1 AND executor != ALL($2) AND inserted_at < $3)"
+        );
+    }
 
     #[sqlx::test]
     async fn load_job_mark_as_executing_for_executor_returns_none_when_db_empty(pool: PgPool) {

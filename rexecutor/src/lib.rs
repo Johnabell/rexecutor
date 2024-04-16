@@ -5,11 +5,13 @@ pub mod backoff;
 mod cron_runner;
 pub mod executor;
 pub mod job;
+pub mod pruner;
 
 use backend::{Backend, BackendError};
 use cron_runner::CronRunner;
 use executor::Executor;
 use job::runner::JobRunner;
+use pruner::{PrunerConfig, PrunerRunner};
 use serde::{de::DeserializeOwned, Serialize};
 use thiserror::Error;
 use tokio::{
@@ -80,8 +82,6 @@ where
 
 static GLOBAL_BACKEND: OnceCell<Arc<dyn Backend + 'static + Sync + Send>> = OnceCell::const_new();
 
-pub struct PrunerConfig {}
-
 impl<B> Rexecuter<B, GlobalUnset>
 where
     B: Backend + Send + 'static + Sync + Clone,
@@ -130,8 +130,9 @@ where
         self.with_executor::<E>()
     }
 
-    pub fn with_job_pruner(self, _config: PrunerConfig) -> Self {
-        // TODO implement the pruner
+    pub fn with_job_pruner(mut self, config: PrunerConfig) -> Self {
+        let handle = PrunerRunner::new(self.backend.clone(), config).spawn();
+        self.executors.push(handle);
         self
     }
 
