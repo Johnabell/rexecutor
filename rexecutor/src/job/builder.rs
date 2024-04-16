@@ -104,11 +104,6 @@ where
         Self { priority, ..self }
     }
 
-    // TODO: add optional metadata
-    pub fn metadata(self) -> Self {
-        self
-    }
-
     pub async fn enqueue(self) -> Result<JobId, RexecuterError>
     where
         E::Data: 'static + Send,

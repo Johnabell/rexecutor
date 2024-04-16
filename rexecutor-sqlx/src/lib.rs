@@ -568,9 +568,9 @@ impl ToQuery for PruneSpec {
             PruneBy::MaxLength(count) => {
                 builder.push(" ORDER BY inserted_at");
                 if in_past {
-                    builder.push(" ASC ");
-                } else {
                     builder.push(" DESC ");
+                } else {
+                    builder.push(" ASC ");
                 }
                 builder.push("OFFSET ");
                 builder.push_bind(count as i64);
@@ -667,7 +667,7 @@ mod test {
         assert_eq!(
             spec.query().into_sql(),
             "DELETE FROM rexecutor_jobs WHERE id in (SELECT id FROM rexecutor_jobs \
-            WHERE status = $1 AND executor = ANY($2) ORDER BY inserted_at ASC OFFSET $3)"
+            WHERE status = $1 AND executor = ANY($2) ORDER BY inserted_at DESC OFFSET $3)"
         );
 
         let spec = PruneSpec {
@@ -679,7 +679,7 @@ mod test {
         assert_eq!(
             spec.query().into_sql(),
             "DELETE FROM rexecutor_jobs WHERE id in (SELECT id FROM rexecutor_jobs \
-            WHERE status = $1 AND executor != ALL($2) ORDER BY inserted_at ASC OFFSET $3)"
+            WHERE status = $1 AND executor != ALL($2) ORDER BY inserted_at DESC OFFSET $3)"
         );
 
         let spec = PruneSpec {

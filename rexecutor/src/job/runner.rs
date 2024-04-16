@@ -54,11 +54,16 @@ where
                                 Ok(job) => {
                                     let job_id = JobId::from(job.id);
                                     match job.try_into() {
-                                    Ok(job) => self.execute_job(job).await,
-                                    Err(error) => {
-                                        tracing::error!(?error, ?job_id, "Failed to decode job: {error}")
+                                        Ok(job) => self.execute_job(job).await,
+                                        Err(error) => {
+                                            tracing::error!(
+                                                ?error,
+                                                ?job_id,
+                                                "Failed to decode job: {error}"
+                                            )
+                                        }
                                     }
-                                }},
+                                }
                                 _ => tracing::warn!("Failed to get from stream"),
                             }
                         }
@@ -82,7 +87,11 @@ where
     }
 
     #[instrument(skip(self, job), fields(job_id))]
-    pub async fn execute_job_with_timeout(&self, job: Job<E::Data, E::Metadata>, timeout: Duration) {
+    pub async fn execute_job_with_timeout(
+        &self,
+        job: Job<E::Data, E::Metadata>,
+        timeout: Duration,
+    ) {
         let is_final_attempt = job.is_final_attempt();
         let job_id = job.id;
         // This should really be the status of the job after the execution

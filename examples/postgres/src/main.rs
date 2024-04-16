@@ -51,7 +51,7 @@ pub async fn main() {
         .with_max_attempts(3)
         .with_tags(vec!["initial_job"])
         .with_data("First job".into())
-        .with_metadata(Some("Delayed attempt".into()))
+        .with_metadata("Delayed attempt".into())
         .schedule_in(TimeDelta::seconds(2))
         .enqueue()
         .await
@@ -105,7 +105,7 @@ struct BasicJob;
 #[async_trait]
 impl Executor for BasicJob {
     type Data = String;
-    type Metadata = Option<String>;
+    type Metadata = String;
     const NAME: &'static str = "basic_job";
     const MAX_ATTEMPTS: u16 = 2;
     async fn execute(job: Job<Self::Data, Self::Metadata>) -> ExecutionResult {

@@ -36,7 +36,7 @@ pub struct Job<E, M> {
     pub status: JobStatus,
     pub executor: String,
     pub data: E,
-    pub metadata: M,
+    pub metadata: Option<M>,
     pub attempt: u16,
     pub max_attempts: u16,
     pub priority: u16,
