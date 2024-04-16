@@ -16,19 +16,20 @@ const DEFAULT_BACKOFF_STRATEGY: BackoffStrategy<Exponential> =
 #[async_trait]
 pub trait Executor {
     type Data;
+    type Metadata;
     const NAME: &'static str;
     const MAX_ATTEMPTS: u16 = 5;
     const MAX_CONCURRENCY: Option<usize> = None;
     const BLOCKING: bool = false;
     const UNIQUENESS_CRITERIA: Option<UniquenessCriteria<'static>> = None;
 
-    async fn execute(job: Job<Self::Data>) -> ExecutionResult;
+    async fn execute(job: Job<Self::Data, Self::Metadata>) -> ExecutionResult;
 
-    fn backoff(job: &Job<Self::Data>) -> Duration {
+    fn backoff(job: &Job<Self::Data, Self::Metadata>) -> Duration {
         DEFAULT_BACKOFF_STRATEGY.backoff(job.attempt)
     }
 
-    fn timeout(_job: &Job<Self::Data>) -> Option<std::time::Duration> {
+    fn timeout(_job: &Job<Self::Data, Self::Metadata>) -> Option<std::time::Duration> {
         None
     }
 
@@ -36,9 +37,12 @@ pub trait Executor {
     where
         Self: Sized,
         Self::Data: Serialize + DeserializeOwned,
+        Self::Metadata: Serialize + DeserializeOwned,
     {
         Default::default()
     }
+
+    // TODO: add API for querying an manipulating jobs
 }
 
 #[derive(Debug, Eq, PartialEq, Clone, Hash)]
@@ -103,9 +107,10 @@ pub(crate) mod test {
     #[async_trait]
     impl Executor for SimpleExecutor {
         type Data = String;
+        type Metadata = String;
         const NAME: &'static str = "simple_executor";
         const MAX_ATTEMPTS: u16 = 2;
-        async fn execute(_job: Job<Self::Data>) -> ExecutionResult {
+        async fn execute(_job: Job<Self::Data, Self::Metadata>) -> ExecutionResult {
             ExecutionResult::Done
         }
     }
@@ -115,9 +120,10 @@ pub(crate) mod test {
     #[async_trait]
     impl Executor for BasicExecutor {
         type Data = String;
+        type Metadata = ();
         const NAME: &'static str = "simple_executor";
         const MAX_ATTEMPTS: u16 = 2;
-        async fn execute(_job: Job<Self::Data>) -> ExecutionResult {
+        async fn execute(_job: Job<Self::Data, Self::Metadata>) -> ExecutionResult {
             ExecutionResult::Done
         }
     }

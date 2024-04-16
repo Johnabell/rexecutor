@@ -15,6 +15,7 @@ where
     B: Backend,
     E: Executor + 'static,
     E::Data: Send + DeserializeOwned,
+    E::Metadata: Serialize + DeserializeOwned,
 {
     backend: B,
     data: E::Data,
@@ -27,6 +28,7 @@ where
     B: Backend + Send + 'static + Sync + Clone,
     E: Executor + 'static + Sync + Send,
     E::Data: Send + Serialize + DeserializeOwned + Hash + Clone + Sync,
+    E::Metadata: Serialize + DeserializeOwned + Send + Sync,
 {
     pub(crate) fn new(backend: B, schedule: Schedule, data: E::Data) -> Self {
         Self {

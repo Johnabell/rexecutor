@@ -48,6 +48,7 @@ pub(crate) struct Job {
     pub status: JobStatus,
     pub executor: String,
     pub data: serde_json::Value,
+    pub metadata: serde_json::Value,
     pub attempt: i32,
     pub max_attempts: i32,
     pub priority: i32,
@@ -65,11 +66,13 @@ impl TryFrom<Job> for rexecutor::backend::Job {
 
     fn try_from(value: Job) -> Result<Self, Self::Error> {
         let data = serde_json::from_value(value.data)?;
+        let metadata = serde_json::from_value(value.metadata)?;
         Ok(Self {
             id: value.id,
             status: value.status.into(),
             executor: value.executor,
             data,
+            metadata,
             attempt: value.attempt,
             attempted_at: value.attempted_at,
             max_attempts: value.max_attempts,

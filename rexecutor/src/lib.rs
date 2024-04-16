@@ -112,6 +112,7 @@ where
     where
         E: Executor + 'static + Sync + Send,
         E::Data: Send + DeserializeOwned,
+        E::Metadata: Serialize + DeserializeOwned + Send,
     {
         let handle = JobRunner::<B, E>::new(self.backend.clone()).spawn();
         self.executors.push(handle);
@@ -123,6 +124,7 @@ where
     where
         E: Executor + 'static + Sync + Send,
         E::Data: Send + Sync + Serialize + DeserializeOwned + Clone + Hash,
+        E::Metadata: Serialize + DeserializeOwned + Send + Sync,
     {
         let handle = CronRunner::<B, E>::new(self.backend.clone(), schedule, data).spawn();
         self.executors.push(handle);

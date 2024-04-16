@@ -19,6 +19,7 @@ where
     B: Backend,
     E: Executor + 'static,
     E::Data: Send + DeserializeOwned,
+    E::Metadata: Send + DeserializeOwned,
 {
     backend: B,
     _executor: PhantomData<E>,
@@ -29,6 +30,7 @@ where
     B: Backend + Send + 'static + Sync + Clone,
     E: Executor + 'static + Sync + Send,
     E::Data: Send + DeserializeOwned,
+    E::Metadata: Send + DeserializeOwned,
 {
     pub(crate) fn new(backend: B) -> Self {
         Self {
@@ -49,12 +51,14 @@ where
                     .for_each_concurrent(E::MAX_CONCURRENCY, {
                         |message| async {
                             match message {
-                                Ok(job) => match job.try_into() {
+                                Ok(job) => {
+                                    let job_id = JobId::from(job.id);
+                                    match job.try_into() {
                                     Ok(job) => self.execute_job(job).await,
                                     Err(error) => {
-                                        tracing::error!(?error, "Failed to decode job: {error}")
+                                        tracing::error!(?error, ?job_id, "Failed to decode job: {error}")
                                     }
-                                },
+                                }},
                                 _ => tracing::warn!("Failed to get from stream"),
                             }
                         }
@@ -70,7 +74,7 @@ where
     }
 
     #[instrument(skip(self, job), fields(job_id))]
-    pub async fn execute_job(&self, job: Job<E::Data>) {
+    pub async fn execute_job(&self, job: Job<E::Data, E::Metadata>) {
         match E::timeout(&job) {
             Some(timeout) => self.execute_job_with_timeout(job, timeout).await,
             None => self.execute_job_without_timeout(job).await,
@@ -78,7 +82,7 @@ where
     }
 
     #[instrument(skip(self, job), fields(job_id))]
-    pub async fn execute_job_with_timeout(&self, job: Job<E::Data>, timeout: Duration) {
+    pub async fn execute_job_with_timeout(&self, job: Job<E::Data, E::Metadata>, timeout: Duration) {
         let is_final_attempt = job.is_final_attempt();
         let job_id = job.id;
         // This should really be the status of the job after the execution
@@ -119,7 +123,7 @@ where
     }
 
     #[instrument(skip(self, job), fields(job_id))]
-    pub async fn execute_job_without_timeout(&self, job: Job<E::Data>) {
+    pub async fn execute_job_without_timeout(&self, job: Job<E::Data, E::Metadata>) {
         let is_final_attempt = job.is_final_attempt();
         let job_id = job.id;
         // This should really be the status of the job after the execution

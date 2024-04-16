@@ -13,8 +13,10 @@ pub struct JobBuilder<'a, E>
 where
     E: Executor + 'static,
     E::Data: Serialize + DeserializeOwned,
+    E::Metadata: Serialize + DeserializeOwned,
 {
     data: Option<E::Data>,
+    metadata: Option<E::Metadata>,
     max_attempts: Option<u16>,
     tags: Vec<String>,
     scheduled_at: DateTime<Utc>,
@@ -26,10 +28,12 @@ impl<'a, E> Default for JobBuilder<'a, E>
 where
     E: Executor,
     E::Data: Serialize + DeserializeOwned,
+    E::Metadata: Serialize + DeserializeOwned,
 {
     fn default() -> Self {
         Self {
             data: Default::default(),
+            metadata: Default::default(),
             max_attempts: None,
             tags: Default::default(),
             scheduled_at: Utc::now(),
@@ -43,10 +47,18 @@ impl<'a, E> JobBuilder<'a, E>
 where
     E: Executor,
     E::Data: Serialize + DeserializeOwned,
+    E::Metadata: Serialize + DeserializeOwned,
 {
     pub fn with_data(self, data: E::Data) -> Self {
         Self {
             data: Some(data),
+            ..self
+        }
+    }
+
+    pub fn with_metadata(self, metadata: E::Metadata) -> Self {
+        Self {
+            metadata: Some(metadata),
             ..self
         }
     }
@@ -116,6 +128,7 @@ where
         let job_id = backend
             .enqueue(EnqueuableJob {
                 data: serde_json::to_value(self.data)?,
+                metadata: serde_json::to_value(self.metadata)?,
                 executor: E::NAME.to_owned(),
                 max_attempts: self.max_attempts.unwrap_or(E::MAX_ATTEMPTS),
                 scheduled_at: self.scheduled_at,

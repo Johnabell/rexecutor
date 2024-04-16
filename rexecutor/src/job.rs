@@ -31,11 +31,12 @@ impl Display for JobId {
 }
 
 // #[non_exhaustive]
-pub struct Job<E> {
+pub struct Job<E, M> {
     pub id: JobId,
     pub status: JobStatus,
     pub executor: String,
     pub data: E,
+    pub metadata: M,
     pub attempt: u16,
     pub max_attempts: u16,
     pub priority: u16,
@@ -48,19 +49,22 @@ pub struct Job<E> {
     pub discarded_at: Option<DateTime<Utc>>,
 }
 
-impl<E> TryFrom<backend::Job> for Job<E>
+impl<E, M> TryFrom<backend::Job> for Job<E, M>
 where
     E: DeserializeOwned,
+    M: DeserializeOwned,
 {
     type Error = serde_json::Error;
 
     fn try_from(value: backend::Job) -> Result<Self, Self::Error> {
         let data = serde_json::from_value(value.data)?;
+        let metadata = serde_json::from_value(value.metadata)?;
         Ok(Self {
             id: value.id.into(),
             status: value.status,
             executor: value.executor,
             data,
+            metadata,
             attempt: value.attempt.try_into().unwrap(),
             attempted_at: value.attempted_at,
             max_attempts: value.max_attempts.try_into().unwrap(),
@@ -75,7 +79,7 @@ where
     }
 }
 
-impl<E> Job<E> {
+impl<E, M> Job<E, M> {
     pub(crate) fn is_final_attempt(&self) -> bool {
         self.attempt == self.max_attempts
     }

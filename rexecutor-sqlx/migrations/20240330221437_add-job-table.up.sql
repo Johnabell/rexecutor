@@ -23,7 +23,7 @@ CREATE TABLE IF NOT EXISTS rexecutor_jobs (
   max_attempts INTEGER NOT null DEFAULT 5,
   attempted_by VARCHAR[],
   tags VARCHAR[] DEFAULT ARRAY[]::character varying[],
-  metadata JSONB DEFAULT '{}'::jsonb,
+  metadata JSONB,
   priority INTEGER NOT null DEFAULT 0,
   uniqueness_key BIGINT,
   inserted_at TIMESTAMP WITH TIME ZONE NOT null DEFAULT timezone('UTC'::text, now()),

@@ -51,6 +51,7 @@ pub async fn main() {
         .with_max_attempts(3)
         .with_tags(vec!["initial_job"])
         .with_data("First job".into())
+        .with_metadata(Some("Delayed attempt".into()))
         .schedule_in(TimeDelta::seconds(2))
         .enqueue()
         .await
@@ -104,9 +105,10 @@ struct BasicJob;
 #[async_trait]
 impl Executor for BasicJob {
     type Data = String;
+    type Metadata = Option<String>;
     const NAME: &'static str = "basic_job";
     const MAX_ATTEMPTS: u16 = 2;
-    async fn execute(job: Job<Self::Data>) -> ExecutionResult {
+    async fn execute(job: Job<Self::Data, Self::Metadata>) -> ExecutionResult {
         println!("{} running, with args: {}", Self::NAME, job.data);
         ExecutionResult::Done
     }
@@ -134,9 +136,10 @@ impl ExecutionError for FlakyJobError {
 #[async_trait]
 impl Executor for FlakyJob {
     type Data = String;
+    type Metadata = ();
     const NAME: &'static str = "flaky_job";
     const MAX_ATTEMPTS: u16 = 1;
-    async fn execute(job: Job<Self::Data>) -> ExecutionResult {
+    async fn execute(job: Job<Self::Data, Self::Metadata>) -> ExecutionResult {
         println!("{} running, with args: {}", Self::NAME, job.data);
         match job.attempt {
             1 => panic!("Terrible things happened"),
@@ -144,7 +147,7 @@ impl Executor for FlakyJob {
             _ => ExecutionResult::Done,
         }
     }
-    fn backoff(job: &Job<Self::Data>) -> TimeDelta {
+    fn backoff(job: &Job<Self::Data, Self::Metadata>) -> TimeDelta {
         BackoffStrategy::constant(TimeDelta::seconds(1))
             .with_jitter(Jitter::Relative(0.5))
             .backoff(job.attempt)
@@ -156,21 +159,22 @@ struct TimeoutJob;
 #[async_trait]
 impl Executor for TimeoutJob {
     type Data = u64;
+    type Metadata = ();
     const NAME: &'static str = "timeout_job";
     const MAX_ATTEMPTS: u16 = 3;
-    async fn execute(job: Job<Self::Data>) -> ExecutionResult {
+    async fn execute(job: Job<Self::Data, Self::Metadata>) -> ExecutionResult {
         println!("{} running, with args: {}", Self::NAME, job.data);
         tokio::time::sleep(Duration::from_millis(job.data)).await;
         ExecutionResult::Done
     }
 
-    fn backoff(job: &Job<Self::Data>) -> TimeDelta {
+    fn backoff(job: &Job<Self::Data, Self::Metadata>) -> TimeDelta {
         BackoffStrategy::linear(TimeDelta::seconds(1))
             .with_jitter(Jitter::Absolute(TimeDelta::milliseconds(500)))
             .backoff(job.attempt)
     }
 
-    fn timeout(job: &Job<Self::Data>) -> Option<Duration> {
+    fn timeout(job: &Job<Self::Data, Self::Metadata>) -> Option<Duration> {
         Some(Duration::from_millis(10 * job.attempt as u64))
     }
 }
@@ -180,9 +184,10 @@ struct CancelledJob;
 #[async_trait]
 impl Executor for CancelledJob {
     type Data = ();
+    type Metadata = ();
     const NAME: &'static str = "cancel_job";
     const MAX_ATTEMPTS: u16 = 1;
-    async fn execute(job: Job<Self::Data>) -> ExecutionResult {
+    async fn execute(job: Job<Self::Data, Self::Metadata>) -> ExecutionResult {
         println!("{} running, with args: {:?}", Self::NAME, job.data);
         ExecutionResult::Cancelled {
             reason: Box::new("Didn't like the job"),
@@ -195,6 +200,7 @@ struct SnoozeJob;
 #[async_trait]
 impl Executor for SnoozeJob {
     type Data = ();
+    type Metadata = ();
     const NAME: &'static str = "snooze_job";
     const MAX_ATTEMPTS: u16 = 1;
     const UNIQUENESS_CRITERIA: Option<UniquenessCriteria<'static>> = Some(
@@ -202,7 +208,7 @@ impl Executor for SnoozeJob {
             .by_executor()
             .by_duration(TimeDelta::seconds(60)),
     );
-    async fn execute(job: Job<Self::Data>) -> ExecutionResult {
+    async fn execute(job: Job<Self::Data, Self::Metadata>) -> ExecutionResult {
         println!("{} running, with args: {:?}", Self::NAME, job.data);
         if (job.scheduled_at - job.inserted_at).num_seconds() < 1 {
             ExecutionResult::Snooze {
@@ -218,9 +224,10 @@ struct CronJob;
 #[async_trait]
 impl Executor for CronJob {
     type Data = String;
+    type Metadata = ();
     const NAME: &'static str = "cron_job";
     const MAX_ATTEMPTS: u16 = 1;
-    async fn execute(job: Job<Self::Data>) -> ExecutionResult {
+    async fn execute(job: Job<Self::Data, Self::Metadata>) -> ExecutionResult {
         println!("{} running, with args: {:?}", Self::NAME, job.data);
         ExecutionResult::Done
     }

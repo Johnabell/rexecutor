@@ -263,6 +263,7 @@ impl RexecutorPgBackend {
                 status AS "status: JobStatus",
                 executor,
                 data,
+                metadata,
                 attempt,
                 max_attempts,
                 priority,
@@ -285,15 +286,17 @@ impl RexecutorPgBackend {
             r#"INSERT INTO rexecutor_jobs (
                 executor,
                 data,
+                metadata,
                 max_attempts,
                 scheduled_at,
                 priority,
                 tags
-            ) VALUES ($1, $2, $3, $4, $5, $6)
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7)
             RETURNING id
             "#,
             job.executor,
             job.data,
+            job.metadata,
             job.max_attempts as i32,
             job.scheduled_at,
             job.priority as i32,
@@ -602,6 +605,7 @@ mod test {
             let job = EnqueuableJob {
                 executor: EXECUTOR.to_owned(),
                 data: Value::String("data".to_owned()),
+                metadata: Value::String("metadata".to_owned()),
                 max_attempts: 5,
                 scheduled_at,
                 tags: Default::default(),
@@ -620,6 +624,7 @@ mod test {
                     status AS "status: JobStatus",
                     executor,
                     data,
+                    metadata,
                     attempt,
                     max_attempts,
                     priority,
@@ -740,6 +745,7 @@ mod test {
         let job = EnqueuableJob {
             executor: "executor".to_owned(),
             data: Value::String("data".to_owned()),
+            metadata: Value::String("metadata".to_owned()),
             max_attempts: 5,
             scheduled_at: Utc::now(),
             tags: Default::default(),

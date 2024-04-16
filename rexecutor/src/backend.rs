@@ -54,6 +54,7 @@ pub struct ExecutionError {
 pub struct EnqueuableJob<'a> {
     pub executor: String,
     pub data: serde_json::Value,
+    pub metadata: serde_json::Value,
     pub max_attempts: u16,
     pub scheduled_at: DateTime<Utc>,
     pub tags: Vec<String>,
@@ -67,6 +68,7 @@ pub struct Job {
     pub status: JobStatus,
     pub executor: String,
     pub data: serde_json::Value,
+    pub metadata: serde_json::Value,
     pub attempt: i32,
     pub max_attempts: i32,
     pub priority: i32,
