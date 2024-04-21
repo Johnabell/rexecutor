@@ -8,6 +8,7 @@ use crate::backend;
 pub mod builder;
 pub(crate) mod runner;
 pub mod uniqueness_criteria;
+pub mod query;
 
 #[derive(Debug, Eq, PartialEq, Clone, Copy)]
 pub struct JobId(i32);
@@ -30,6 +31,7 @@ impl Display for JobId {
     }
 }
 
+#[derive(Debug, Eq, PartialEq, Clone)]
 // #[non_exhaustive]
 pub struct Job<E, M> {
     pub id: JobId,
@@ -40,6 +42,7 @@ pub struct Job<E, M> {
     pub attempt: u16,
     pub max_attempts: u16,
     pub priority: u16,
+    pub tags: Vec<String>,
     pub errors: Vec<JobError>,
     pub inserted_at: DateTime<Utc>,
     pub scheduled_at: DateTime<Utc>,
@@ -69,6 +72,7 @@ where
             attempted_at: value.attempted_at,
             max_attempts: value.max_attempts.try_into().unwrap(),
             priority: value.priority.try_into().unwrap(),
+            tags: value.tags,
             errors: value.errors,
             inserted_at: value.inserted_at,
             scheduled_at: value.scheduled_at,
@@ -95,7 +99,7 @@ pub enum JobStatus {
     Discarded,
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub struct JobError {
     pub attempt: u16,
     pub error_type: ErrorType,
@@ -103,7 +107,7 @@ pub struct JobError {
     pub recorded_at: DateTime<Utc>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub enum ErrorType {
     Panic,
     Timeout,

@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "SELECT\n                    id,\n                    status AS \"status: JobStatus\",\n                    executor,\n                    data,\n                    metadata,\n                    attempt,\n                    max_attempts,\n                    priority,\n                    errors,\n                    inserted_at,\n                    scheduled_at,\n                    attempted_at,\n                    completed_at,\n                    cancelled_at,\n                    discarded_at\n                FROM rexecutor_jobs\n                ",
+  "query": "SELECT\n                    id,\n                    status AS \"status: JobStatus\",\n                    executor,\n                    data,\n                    metadata,\n                    attempt,\n                    max_attempts,\n                    priority,\n                    tags,\n                    errors,\n                    inserted_at,\n                    scheduled_at,\n                    attempted_at,\n                    completed_at,\n                    cancelled_at,\n                    discarded_at\n                FROM rexecutor_jobs\n                ",
   "describe": {
     "columns": [
       {
@@ -59,36 +59,41 @@
       },
       {
         "ordinal": 8,
+        "name": "tags",
+        "type_info": "VarcharArray"
+      },
+      {
+        "ordinal": 9,
         "name": "errors",
         "type_info": "JsonbArray"
       },
       {
-        "ordinal": 9,
+        "ordinal": 10,
         "name": "inserted_at",
         "type_info": "Timestamptz"
       },
       {
-        "ordinal": 10,
+        "ordinal": 11,
         "name": "scheduled_at",
         "type_info": "Timestamptz"
       },
       {
-        "ordinal": 11,
+        "ordinal": 12,
         "name": "attempted_at",
         "type_info": "Timestamptz"
       },
       {
-        "ordinal": 12,
+        "ordinal": 13,
         "name": "completed_at",
         "type_info": "Timestamptz"
       },
       {
-        "ordinal": 13,
+        "ordinal": 14,
         "name": "cancelled_at",
         "type_info": "Timestamptz"
       },
       {
-        "ordinal": 14,
+        "ordinal": 15,
         "name": "discarded_at",
         "type_info": "Timestamptz"
       }
@@ -108,11 +113,12 @@
       false,
       false,
       false,
+      false,
       true,
       true,
       true,
       true
     ]
   },
-  "hash": "c788a7366fb568be131ad8cfb9670dcf5bd0a89e45855e34268701cafae8053c"
+  "hash": "3d7067241f872ace4cf5c1967e916888416abc9b91dc09b9a0ee0401795447dd"
 }

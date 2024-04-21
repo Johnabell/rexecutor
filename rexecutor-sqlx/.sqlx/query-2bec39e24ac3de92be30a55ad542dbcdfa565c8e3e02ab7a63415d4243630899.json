@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "UPDATE rexecutor_jobs\n            SET\n                status = (CASE WHEN attempt = 1 THEN 'scheduled' ELSE 'retryable' END)::rexecutor_job_state,\n                scheduled_at = $2,\n                completed_at = null,\n                cancelled_at = null,\n                discarded_at = null,\n                max_attempts = max_attempts + 1\n            WHERE id = $1",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int4",
+        "Timestamptz"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "2bec39e24ac3de92be30a55ad542dbcdfa565c8e3e02ab7a63415d4243630899"
+}

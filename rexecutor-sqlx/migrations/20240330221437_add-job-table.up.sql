@@ -22,7 +22,7 @@ CREATE TABLE IF NOT EXISTS rexecutor_jobs (
   attempt INTEGER NOT null DEFAULT 0,
   max_attempts INTEGER NOT null DEFAULT 5,
   attempted_by VARCHAR[],
-  tags VARCHAR[] DEFAULT ARRAY[]::character varying[],
+  tags VARCHAR[] NOT null DEFAULT ARRAY[]::character varying[],
   metadata JSONB,
   priority INTEGER NOT null DEFAULT 0,
   uniqueness_key BIGINT,

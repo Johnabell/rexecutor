@@ -6,7 +6,7 @@ use chrono::TimeDelta;
 use rexecutor::{
     backoff::{BackoffStrategy, Jitter, Strategy},
     executor::{ExecutionError, ExecutionResult, Executor},
-    job::{uniqueness_criteria::UniquenessCriteria, Job, JobStatus},
+    job::{query::Where, uniqueness_criteria::UniquenessCriteria, Job, JobStatus},
     pruner::{Pruner, PrunerConfig},
     Rexecuter,
 };
@@ -58,7 +58,7 @@ pub async fn main() {
         .unwrap();
     println!("Inserted job {job_id}");
 
-    let job_id = BasicJob::builder()
+    let job_id_2 = BasicJob::builder()
         .with_max_attempts(2)
         .add_tag("second_job")
         .add_tag("running_again")
@@ -67,7 +67,7 @@ pub async fn main() {
         .enqueue()
         .await
         .unwrap();
-    println!("Inserted job {job_id}");
+    println!("Inserted job {job_id_2}");
 
     let job_id = FlakyJob::builder()
         .with_max_attempts(3)
@@ -96,6 +96,20 @@ pub async fn main() {
     println!("Inserted job {job_id}");
 
     tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+
+    BasicJob::rerun_job(job_id_2).await.unwrap();
+
+    tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+    let recent_jobs = BasicJob::query_jobs(
+        Where::tagged_by_one_of(&["second_job", "initial_job"])
+            .and(!Where::status_equal(JobStatus::Discarded))
+            .and(!Where::status_equal(JobStatus::Cancelled))
+            .and(!Where::scheduled_at_older_than(TimeDelta::minutes(10))),
+    )
+    .await
+    .unwrap();
+
+    assert!(recent_jobs.len() > 2);
 
     let _ = handle.graceful_shutdown().await;
 }
