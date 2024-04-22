@@ -106,10 +106,7 @@ pub enum Query<'a> {
 
 impl<'a> Query<'a> {
     pub(crate) fn for_executor(self, executor: &'static str) -> Self {
-        Self::And(vec![
-            Query::ExecutorEqual(executor),
-            self
-        ])
+        Self::And(vec![Query::ExecutorEqual(executor), self])
     }
 }
 

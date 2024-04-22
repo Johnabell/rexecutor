@@ -6,9 +6,9 @@ use serde::de::DeserializeOwned;
 use crate::backend;
 
 pub mod builder;
+pub mod query;
 pub(crate) mod runner;
 pub mod uniqueness_criteria;
-pub mod query;
 
 #[derive(Debug, Eq, PartialEq, Clone, Copy)]
 pub struct JobId(i32);
@@ -97,6 +97,17 @@ pub enum JobStatus {
     Retryable,
     Cancelled,
     Discarded,
+}
+
+impl JobStatus {
+    pub const ALL: [JobStatus; 6] = [
+        Self::Complete,
+        Self::Executing,
+        Self::Scheduled,
+        Self::Retryable,
+        Self::Cancelled,
+        Self::Discarded,
+    ];
 }
 
 #[derive(Debug, PartialEq, Eq, Clone)]

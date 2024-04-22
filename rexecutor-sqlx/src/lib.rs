@@ -3,14 +3,14 @@ use std::{collections::HashMap, ops::Deref, sync::Arc};
 use chrono::{DateTime, Utc};
 use rexecutor::{
     backend::{BackendError, EnqueuableJob, ExecutionError, Query},
-    job::JobId,
+    job::{uniqueness_criteria::Resolution, JobId},
     pruner::PruneSpec,
 };
 use serde::Deserialize;
 use sqlx::{
     postgres::{PgListener, PgPoolOptions},
     types::Text,
-    PgPool, Row,
+    PgPool, QueryBuilder, Row,
 };
 use tokio::sync::{mpsc, RwLock};
 
@@ -216,8 +216,48 @@ impl RexecutorPgBackend {
                 Ok(data.id.into())
             }
             Some(val) => {
-                tx.rollback().await?;
-                Ok(val.get::<i32, _>(0).into())
+                let job_id = val.get::<i32, _>(0);
+                let status = val.get::<JobStatus, _>(1);
+                match uniqueness_criteria.on_conflict {
+                    Resolution::Replace(replace)
+                        if replace
+                            .for_statuses
+                            .iter()
+                            .map(|js| JobStatus::from(*js))
+                            .any(|js| js == status) =>
+                    {
+                        let mut builder = QueryBuilder::new("UPDATE rexecutor_jobs SET");
+                        let mut seperated = builder.separated(",");
+                        if replace.scheduled_at {
+                            seperated.push_unseparated(" scheduled_at = ");
+                            seperated.push_bind(job.scheduled_at);
+                        }
+                        if replace.data {
+                            seperated.push_unseparated(" data = ");
+                            seperated.push_bind(job.data);
+                        }
+                        if replace.metadata {
+                            seperated.push_unseparated(" metadata = ");
+                            seperated.push_bind(job.metadata);
+                        }
+                        if replace.priority {
+                            seperated.push_unseparated(" priority = ");
+                            seperated.push_bind(job.priority as i32);
+                        }
+                        if replace.max_attempts {
+                            seperated.push_unseparated(" max_attempts = ");
+                            seperated.push_bind(job.max_attempts as i32);
+                        }
+                        builder.push(" WHERE id  = ");
+                        builder.push_bind(job_id);
+                        builder.build().execute(&mut *tx).await?;
+                        tx.commit().await?;
+                    }
+                    _ => {
+                        tx.rollback().await?;
+                    }
+                }
+                Ok(job_id.into())
             }
         }
     }

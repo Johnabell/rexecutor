@@ -22,7 +22,7 @@ impl<'a> Unique for UniquenessCriteria<'a> {
 
     fn query(&self, key: i64, scheduled_at: DateTime<Utc>) -> QueryBuilder<'_, Postgres> {
         let mut builder =
-            QueryBuilder::new("SELECT id FROM rexecutor_jobs WHERE uniqueness_key = ");
+            QueryBuilder::new("SELECT id, status FROM rexecutor_jobs WHERE uniqueness_key = ");
         builder.push_bind(key);
         if let Some(duration) = self.duration {
             let cutoff = scheduled_at - duration;

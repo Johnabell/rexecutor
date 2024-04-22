@@ -78,10 +78,10 @@ where
     }
 
     async fn enqueue_job(&self, scheduled_at: DateTime<Utc>) {
-        let criteria = UniquenessCriteria::default()
-            .by_duration(TimeDelta::zero())
-            .by_key(&self.data)
-            .by_executor();
+        let criteria = UniquenessCriteria::by_executor()
+            .and_within(TimeDelta::zero())
+            .and_key(&self.data)
+            .and_executor();
 
         let _ = E::builder()
             .schedule_at(scheduled_at)

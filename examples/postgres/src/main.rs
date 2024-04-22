@@ -6,7 +6,11 @@ use chrono::TimeDelta;
 use rexecutor::{
     backoff::{BackoffStrategy, Jitter, Strategy},
     executor::{ExecutionError, ExecutionResult, Executor},
-    job::{query::Where, uniqueness_criteria::UniquenessCriteria, Job, JobStatus},
+    job::{
+        query::Where,
+        uniqueness_criteria::{Replace, UniquenessCriteria},
+        Job, JobStatus,
+    },
     pruner::{Pruner, PrunerConfig},
     Rexecuter,
 };
@@ -93,6 +97,13 @@ pub async fn main() {
     println!("Inserted job {job_id}");
 
     let job_id = SnoozeJob::builder().enqueue().await.unwrap();
+    println!("Inserted job {job_id}");
+    // Based on the uniqueness criteria of the job this will override the priority.
+    let job_id = SnoozeJob::builder()
+        .with_priority(42)
+        .enqueue()
+        .await
+        .unwrap();
     println!("Inserted job {job_id}");
 
     tokio::time::sleep(std::time::Duration::from_secs(5)).await;
@@ -218,9 +229,9 @@ impl Executor for SnoozeJob {
     const NAME: &'static str = "snooze_job";
     const MAX_ATTEMPTS: u16 = 1;
     const UNIQUENESS_CRITERIA: Option<UniquenessCriteria<'static>> = Some(
-        UniquenessCriteria::new()
-            .by_executor()
-            .by_duration(TimeDelta::seconds(60)),
+        UniquenessCriteria::by_executor()
+            .and_within(TimeDelta::seconds(60))
+            .on_conflict(Replace::priority().for_statuses(&JobStatus::ALL)),
     );
     async fn execute(job: Job<Self::Data, Self::Metadata>) -> ExecutionResult {
         println!("{} running, with args: {:?}", Self::NAME, job.data);

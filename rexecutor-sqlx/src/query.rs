@@ -227,6 +227,5 @@ mod test {
             Query::TagsOneOf(&["tag1", "tag2"]),
         ]);
         dbg!(query.query().into_sql());
-        panic!()
     }
 }

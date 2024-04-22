@@ -5,8 +5,7 @@ use rexecutor::backend::BackendError;
 use serde::{Deserialize, Serialize};
 use sqlx::prelude::FromRow;
 
-#[derive(sqlx::Type, Debug, Clone, Copy, Serialize)]
-#[cfg_attr(test, derive(PartialEq))]
+#[derive(sqlx::Type, Debug, Clone, Copy, Serialize, PartialEq, Eq)]
 #[sqlx(type_name = "rexecutor_job_state", rename_all = "lowercase")]
 pub(crate) enum JobStatus {
     Complete,

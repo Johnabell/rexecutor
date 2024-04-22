@@ -108,8 +108,7 @@ impl Backend for RexecutorPgBackend {
             .map_err(|_| BackendError::BadStateError)
     }
     async fn query<'a>(&self, query: Query<'a>) -> Result<Vec<Job>, BackendError> {
-        self
-            .run_query(query)
+        self.run_query(query)
             .await
             .map_err(|_| BackendError::BadStateError)?
             .into_iter()
