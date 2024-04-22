@@ -3,17 +3,7 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use chrono::TimeDelta;
-use rexecutor::{
-    backoff::{BackoffStrategy, Jitter, Strategy},
-    executor::{ExecutionError, ExecutionResult, Executor},
-    job::{
-        query::Where,
-        uniqueness_criteria::{Replace, UniquenessCriteria},
-        Job, JobStatus,
-    },
-    pruner::{Pruner, PrunerConfig},
-    Rexecuter,
-};
+use rexecutor::prelude::*;
 use rexecutor_sqlx::RexecutorPgBackend;
 
 const DEFAULT_DATABASE_URL: &str = "postgresql://postgres:postgres@localhost:5432/postgres";
@@ -39,7 +29,7 @@ pub async fn main() {
     let backend = RexecutorPgBackend::from_db_url(&db_url).await.unwrap();
     backend.run_migrations().await.unwrap();
 
-    let handle = Rexecuter::new(backend)
+    let handle = Rexecutor::new(backend)
         .with_executor::<BasicJob>()
         .with_executor::<TimeoutJob>()
         .with_executor::<CancelledJob>()

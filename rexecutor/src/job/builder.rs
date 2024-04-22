@@ -9,6 +9,7 @@ use serde::{de::DeserializeOwned, Serialize};
 
 use super::JobId;
 
+// TODO add api to add as a cron job
 pub struct JobBuilder<'a, E>
 where
     E: Executor + 'static,

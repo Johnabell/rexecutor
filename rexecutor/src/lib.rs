@@ -5,6 +5,7 @@ pub mod backoff;
 mod cron_runner;
 pub mod executor;
 pub mod job;
+pub mod prelude;
 pub mod pruner;
 
 use backend::{Backend, BackendError};
@@ -28,13 +29,13 @@ impl InternalRexecutorState for GlobalSet {}
 
 #[derive(Debug)]
 #[allow(private_bounds)]
-pub struct Rexecuter<B: Backend, State: InternalRexecutorState> {
+pub struct Rexecutor<B: Backend, State: InternalRexecutorState> {
     executors: Vec<ExecutorHandle>,
     backend: B,
     _state: PhantomData<State>,
 }
 
-impl<B> Default for Rexecuter<B, GlobalUnset>
+impl<B> Default for Rexecutor<B, GlobalUnset>
 where
     B: Backend + Default,
 {
@@ -67,7 +68,7 @@ enum Message {
     Terminate,
 }
 
-impl<B> Rexecuter<B, GlobalUnset>
+impl<B> Rexecutor<B, GlobalUnset>
 where
     B: Backend,
 {
@@ -82,11 +83,11 @@ where
 
 static GLOBAL_BACKEND: OnceCell<Arc<dyn Backend + 'static + Sync + Send>> = OnceCell::const_new();
 
-impl<B> Rexecuter<B, GlobalUnset>
+impl<B> Rexecutor<B, GlobalUnset>
 where
     B: Backend + Send + 'static + Sync + Clone,
 {
-    pub fn set_global_backend(self) -> Result<Rexecuter<B, GlobalSet>, RexecuterError> {
+    pub fn set_global_backend(self) -> Result<Rexecutor<B, GlobalSet>, RexecuterError> {
         GLOBAL_BACKEND
             .set(Arc::new(self.backend.clone()))
             .map_err(|err| {
@@ -94,7 +95,7 @@ where
                 RexecuterError::GlobalBackend
             })?;
 
-        Ok(Rexecuter {
+        Ok(Rexecutor {
             executors: self.executors,
             backend: self.backend,
             _state: PhantomData,
@@ -103,7 +104,7 @@ where
 }
 
 #[allow(private_bounds)]
-impl<B, State> Rexecuter<B, State>
+impl<B, State> Rexecutor<B, State>
 where
     B: Backend + Send + 'static + Sync + Clone,
     State: InternalRexecutorState,
@@ -173,6 +174,6 @@ mod tests {
 
     #[tokio::test]
     async fn setup() {
-        let _handle = Rexecuter::<MockBackend, _>::default().with_executor::<SimpleExecutor>();
+        let _handle = Rexecutor::<MockBackend, _>::default().with_executor::<SimpleExecutor>();
     }
 }
