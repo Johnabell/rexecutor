@@ -199,19 +199,126 @@ pub struct DefaultBackend {}
 #[cfg(test)]
 pub(crate) mod test {
 
+    use chrono::TimeDelta;
+    use std::collections::HashMap;
     use std::sync::{Arc, Mutex};
+    use tokio::sync::mpsc;
+    use tokio_stream::wrappers::UnboundedReceiverStream;
+
+    use crate::executor::Executor;
 
     use super::*;
+    type StreamSender = mpsc::UnboundedSender<Result<Job, BackendError>>;
+
+    impl Job {
+        pub(crate) fn mock_job<T: Executor>() -> Self {
+            let now = Utc::now();
+            Self {
+                id: 0,
+                executor: T::NAME.to_owned(),
+                status: JobStatus::Scheduled,
+                data: serde_json::Value::Null,
+                metadata: serde_json::Value::Null,
+                attempt: 0,
+                max_attempts: 3,
+                priority: 0,
+                tags: vec![],
+                errors: vec![],
+                inserted_at: now,
+                scheduled_at: now + TimeDelta::hours(2),
+                attempted_at: None,
+                completed_at: None,
+                cancelled_at: None,
+                discarded_at: None,
+            }
+        }
+    }
+
+    impl Job {
+        pub(crate) fn with_data<D>(self, data: D) -> Self
+        where
+            D: Serialize,
+        {
+            Self {
+                data: serde_json::to_value(data).unwrap(),
+                ..self
+            }
+        }
+
+        pub(crate) fn with_max_attempts(self, max_attempts: i32) -> Self {
+            Self {
+                max_attempts,
+                ..self
+            }
+        }
+
+        pub(crate) fn with_attempt(self, attempt: i32) -> Self {
+            Self { attempt, ..self }
+        }
+    }
 
     #[derive(Clone, Debug)]
     pub struct MockBackend {
         enqueue_return: Arc<Mutex<Vec<Result<JobId, BackendError>>>>,
+        mark_complete_return: Arc<Mutex<Vec<Result<(), BackendError>>>>,
+        mark_retryable_return: Arc<Mutex<Vec<Result<(), BackendError>>>>,
+        mark_discarded_return: Arc<Mutex<Vec<Result<(), BackendError>>>>,
+        mark_cancelled_return: Arc<Mutex<Vec<Result<(), BackendError>>>>,
+        mark_snoozed_return: Arc<Mutex<Vec<Result<(), BackendError>>>>,
+        senders: Arc<Mutex<HashMap<ExecutorIdentifier, StreamSender>>>,
+    }
+
+    impl Drop for MockBackend {
+        fn drop(&mut self) {
+            let enqueue_returns = self.enqueue_return.lock().unwrap();
+            assert!(
+                enqueue_returns.is_empty(),
+                "Expectation for call to enqueue not fulfilled:\n\
+                - expected calls returning {enqueue_returns:?}"
+            );
+            let mark_complete_return = self.mark_complete_return.lock().unwrap();
+            assert!(
+                mark_complete_return.is_empty(),
+                "Expectation for call to mark_job_complete not fulfilled:\n\
+                - expected calls returning {mark_complete_return:?}"
+            );
+            let mark_retryable_return = self.mark_retryable_return.lock().unwrap();
+            assert!(
+                mark_retryable_return.is_empty(),
+                "Expectation for call to mark_job_retryable not fulfilled:\n\
+                - expected calls returning {mark_retryable_return:?}"
+            );
+            let mark_discarded_return = self.mark_discarded_return.lock().unwrap();
+            assert!(
+                mark_discarded_return.is_empty(),
+                "Expectation for call to mark_job_discarded not fulfilled:\n\
+                - expected calls returning {mark_discarded_return:?}"
+            );
+            let mark_cancelled_return = self.mark_cancelled_return.lock().unwrap();
+            assert!(
+                mark_cancelled_return.is_empty(),
+                "Expectation for call to mark_job_cancelled not fulfilled:\n\
+                - expected calls returning {mark_cancelled_return:?}"
+            );
+            let mark_snoozed_return = self.mark_snoozed_return.lock().unwrap();
+            assert!(
+                mark_snoozed_return.is_empty(),
+                "Expectation for call to mark_job_snoozed not fulfilled:\n\
+                - expected calls returning {mark_snoozed_return:?}"
+            );
+        }
     }
 
     impl Default for MockBackend {
         fn default() -> Self {
             Self {
                 enqueue_return: Arc::new(vec![].into()),
+                mark_complete_return: Arc::new(vec![].into()),
+                mark_retryable_return: Arc::new(vec![].into()),
+                mark_discarded_return: Arc::new(vec![].into()),
+                mark_cancelled_return: Arc::new(vec![].into()),
+                mark_snoozed_return: Arc::new(vec![].into()),
+                senders: Arc::new(HashMap::default().into()),
             }
         }
     }
@@ -220,19 +327,25 @@ pub(crate) mod test {
     impl Backend for MockBackend {
         async fn subscribe_new_events(
             &self,
-            _executor_name: ExecutorIdentifier,
+            executor_name: ExecutorIdentifier,
         ) -> Pin<Box<dyn Stream<Item = Result<Job, BackendError>> + Send>> {
-            Box::pin(futures::stream::empty())
+            let (sender, receiver) = mpsc::unbounded_channel();
+            self.senders.lock().unwrap().insert(executor_name, sender);
+            Box::pin(UnboundedReceiverStream::from(receiver))
         }
         async fn enqueue<'a>(&self, _job: EnqueuableJob<'a>) -> Result<JobId, BackendError> {
             self.enqueue_return
                 .lock()
                 .unwrap()
                 .pop()
-                .unwrap_or(Ok(0.into()))
+                .expect("No matching expectation for enqueue")
         }
         async fn mark_job_complete(&self, _id: JobId) -> Result<(), BackendError> {
-            Ok(())
+            self.mark_complete_return
+                .lock()
+                .unwrap()
+                .pop()
+                .expect("No matching expectation for mark_job_complete")
         }
         async fn mark_job_retryable(
             &self,
@@ -240,46 +353,88 @@ pub(crate) mod test {
             _next_scheduled_at: DateTime<Utc>,
             _error: ExecutionError,
         ) -> Result<(), BackendError> {
-            Ok(())
+            self.mark_retryable_return
+                .lock()
+                .unwrap()
+                .pop()
+                .expect("No matching expectation for mark_job_retryable")
         }
         async fn mark_job_discarded(
             &self,
             _id: JobId,
             _error: ExecutionError,
         ) -> Result<(), BackendError> {
-            Ok(())
+            self.mark_discarded_return
+                .lock()
+                .unwrap()
+                .pop()
+                .expect("No matching expectation for mark_job_discarded")
         }
         async fn mark_job_cancelled(
             &self,
             _id: JobId,
             _error: ExecutionError,
         ) -> Result<(), BackendError> {
-            Ok(())
+            self.mark_cancelled_return
+                .lock()
+                .unwrap()
+                .pop()
+                .expect("No matching expectation for mark_job_discarded")
         }
         async fn mark_job_snoozed(
             &self,
             _id: JobId,
             _next_scheduled_at: DateTime<Utc>,
         ) -> Result<(), BackendError> {
-            Ok(())
+            self.mark_snoozed_return
+                .lock()
+                .unwrap()
+                .pop()
+                .expect("No matching expectation for mark_job_snoozed")
         }
         async fn prune_jobs(&self, _spec: &PruneSpec) -> Result<(), BackendError> {
-            Ok(())
+            unimplemented!()
         }
         async fn rerun_job(&self, _id: JobId) -> Result<(), BackendError> {
-            Ok(())
+            unimplemented!()
         }
         async fn update_job(&self, _job: Job) -> Result<(), BackendError> {
-            Ok(())
+            unimplemented!()
         }
         async fn query<'a>(&self, _query: Query<'a>) -> Result<Vec<Job>, BackendError> {
-            Ok(vec![])
+            unimplemented!()
         }
     }
 
     impl MockBackend {
-        pub(crate) fn expect_enqueue_returning(&mut self, result: Result<JobId, BackendError>) {
+        pub(crate) fn expect_enqueue_returning(&self, result: Result<JobId, BackendError>) {
             self.enqueue_return.lock().unwrap().push(result)
+        }
+        pub(crate) fn expect_mark_job_complete_returning(&self, result: Result<(), BackendError>) {
+            self.mark_complete_return.lock().unwrap().push(result);
+        }
+        pub(crate) fn expect_mark_job_retryable_returning(&self, result: Result<(), BackendError>) {
+            self.mark_retryable_return.lock().unwrap().push(result);
+        }
+        pub(crate) fn expect_mark_job_discarded_returning(&self, result: Result<(), BackendError>) {
+            self.mark_discarded_return.lock().unwrap().push(result);
+        }
+        pub(crate) fn expect_mark_job_snoozed_returning(&self, result: Result<(), BackendError>) {
+            self.mark_snoozed_return.lock().unwrap().push(result);
+        }
+        pub(crate) fn expect_mark_job_cancelled_returning(&self, result: Result<(), BackendError>) {
+            self.mark_cancelled_return.lock().unwrap().push(result);
+        }
+        pub(crate) fn push_to_stream(
+            &self,
+            executor_name: ExecutorIdentifier,
+            event: Result<Job, BackendError>,
+        ) {
+            self.senders
+                .lock()
+                .unwrap()
+                .get(&executor_name)
+                .map(|sender| sender.send(event));
         }
     }
 }

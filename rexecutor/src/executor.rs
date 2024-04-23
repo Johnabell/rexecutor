@@ -1,5 +1,5 @@
 use async_trait::async_trait;
-use chrono::{Duration, TimeDelta};
+use chrono::TimeDelta;
 use serde::{de::DeserializeOwned, Serialize};
 use std::{error::Error, fmt::Display};
 
@@ -28,7 +28,7 @@ pub trait Executor {
 
     async fn execute(job: Job<Self::Data, Self::Metadata>) -> ExecutionResult;
 
-    fn backoff(job: &Job<Self::Data, Self::Metadata>) -> Duration {
+    fn backoff(job: &Job<Self::Data, Self::Metadata>) -> TimeDelta {
         DEFAULT_BACKOFF_STRATEGY.backoff(job.attempt)
     }
 
@@ -159,7 +159,7 @@ impl std::ops::Deref for ExecutorIdentifier {
 pub enum ExecutionResult {
     Done,
     Cancelled { reason: Box<dyn CancellationReason> },
-    Snooze { delay: Duration },
+    Snooze { delay: TimeDelta },
     Error { error: Box<dyn ExecutionError> },
 }
 
@@ -185,6 +185,7 @@ impl<T> CancellationReason for T where T: Display + Send {}
 #[cfg(test)]
 pub(crate) mod test {
     use async_trait::async_trait;
+    use serde::{Deserialize, Serialize};
 
     use crate::job::Job;
 
@@ -203,16 +204,49 @@ pub(crate) mod test {
         }
     }
 
-    pub(crate) struct BasicExecutor;
+    pub(crate) struct MockReturnExecutor;
+
+    #[derive(Debug, Clone, Serialize, Deserialize)]
+    pub(crate) enum MockExecutionResult {
+        Done,
+        Cancelled { reason: String },
+        Snooze { delay: std::time::Duration },
+        Error { error: MockError },
+    }
+
+    #[derive(Debug, Clone, Serialize, Deserialize)]
+    pub(crate) struct MockError(pub String);
+    impl std::fmt::Display for MockError {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            write!(f, "{}", self.0)
+        }
+    }
+    impl Error for MockError {}
+    impl ExecutionError for MockError {
+        fn error_type(&self) -> &'static str {
+            "custom"
+        }
+    }
 
     #[async_trait]
-    impl Executor for BasicExecutor {
-        type Data = String;
+    impl Executor for MockReturnExecutor {
+        type Data = MockExecutionResult;
         type Metadata = ();
-        const NAME: &'static str = "simple_executor";
+        const NAME: &'static str = "basic_executor";
         const MAX_ATTEMPTS: u16 = 2;
-        async fn execute(_job: Job<Self::Data, Self::Metadata>) -> ExecutionResult {
-            ExecutionResult::Done
+        async fn execute(job: Job<Self::Data, Self::Metadata>) -> ExecutionResult {
+            match job.data {
+                MockExecutionResult::Done => ExecutionResult::Done,
+                MockExecutionResult::Cancelled { reason } => ExecutionResult::Cancelled {
+                    reason: Box::new(reason),
+                },
+                MockExecutionResult::Snooze { delay } => ExecutionResult::Snooze {
+                    delay: TimeDelta::from_std(delay).unwrap(),
+                },
+                MockExecutionResult::Error { error } => ExecutionResult::Error {
+                    error: Box::new(error),
+                },
+            }
         }
     }
 }

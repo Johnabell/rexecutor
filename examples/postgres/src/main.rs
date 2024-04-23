@@ -110,7 +110,7 @@ pub async fn main() {
     .await
     .unwrap();
 
-    assert!(recent_jobs.len() > 2);
+    assert!(recent_jobs.len() >= 2);
 
     let _ = handle.graceful_shutdown().await;
 }

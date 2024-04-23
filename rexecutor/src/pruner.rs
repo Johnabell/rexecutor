@@ -223,7 +223,7 @@ where
 mod test {
     use std::str::FromStr;
 
-    use crate::executor::test::{BasicExecutor, SimpleExecutor};
+    use crate::executor::test::{MockReturnExecutor, SimpleExecutor};
 
     use super::*;
 
@@ -233,12 +233,12 @@ mod test {
             .with_pruner(
                 Pruner::max_age(TimeDelta::days(31), JobStatus::Complete)
                     .only::<SimpleExecutor>()
-                    .and::<BasicExecutor>(),
+                    .and::<MockReturnExecutor>(),
             )
             .with_pruner(
                 Pruner::max_length(200, JobStatus::Discarded)
                     .except::<SimpleExecutor>()
-                    .and::<BasicExecutor>(),
+                    .and::<MockReturnExecutor>(),
             );
 
         assert_eq!(config.pruners.len(), 2);

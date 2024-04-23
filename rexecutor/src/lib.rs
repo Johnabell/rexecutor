@@ -169,11 +169,123 @@ pub enum RexecuterError {
 
 #[cfg(test)]
 mod tests {
+    use std::time::Duration;
+
     use super::*;
-    use crate::{backend::test::MockBackend, executor::test::SimpleExecutor};
+    use crate::{
+        backend::{test::MockBackend, Job},
+        executor::test::{MockError, MockExecutionResult, MockReturnExecutor},
+    };
 
     #[tokio::test]
-    async fn setup() {
-        let _handle = Rexecutor::<MockBackend, _>::default().with_executor::<SimpleExecutor>();
+    async fn run_job_success() {
+        let backend = MockBackend::default();
+        backend.expect_mark_job_complete_returning(Ok(()));
+
+        let handle =
+            Rexecutor::<MockBackend, _>::new(backend.clone()).with_executor::<MockReturnExecutor>();
+
+        tokio::task::yield_now().await;
+
+        let job = Job::mock_job::<MockReturnExecutor>().with_data(MockExecutionResult::Done);
+
+        backend.push_to_stream(MockReturnExecutor::NAME.into(), Ok(job));
+
+        tokio::task::yield_now().await;
+
+        handle.graceful_shutdown().await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn run_job_retryable() {
+        let backend = MockBackend::default();
+        backend.expect_mark_job_retryable_returning(Ok(()));
+
+        let handle =
+            Rexecutor::<MockBackend, _>::new(backend.clone()).with_executor::<MockReturnExecutor>();
+
+        tokio::task::yield_now().await;
+
+        let job = Job::mock_job::<MockReturnExecutor>().with_data(MockExecutionResult::Error {
+            error: MockError("oh no".to_owned()),
+        });
+
+        backend.push_to_stream(MockReturnExecutor::NAME.into(), Ok(job));
+
+        tokio::task::yield_now().await;
+
+        handle.graceful_shutdown().await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn run_job_discarded() {
+        let backend = MockBackend::default();
+        backend.expect_mark_job_discarded_returning(Ok(()));
+
+        let handle =
+            Rexecutor::<MockBackend, _>::new(backend.clone()).with_executor::<MockReturnExecutor>();
+
+        tokio::task::yield_now().await;
+
+        let job = Job::mock_job::<MockReturnExecutor>()
+            .with_data(MockExecutionResult::Error {
+                error: MockError("oh no".to_owned()),
+            })
+            .with_max_attempts(1)
+            .with_attempt(1);
+
+        backend.push_to_stream(MockReturnExecutor::NAME.into(), Ok(job));
+
+        tokio::task::yield_now().await;
+
+        handle.graceful_shutdown().await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn run_job_snoozed() {
+        let backend = MockBackend::default();
+        backend.expect_mark_job_snoozed_returning(Ok(()));
+
+        let handle =
+            Rexecutor::<MockBackend, _>::new(backend.clone()).with_executor::<MockReturnExecutor>();
+
+        tokio::task::yield_now().await;
+
+        let job = Job::mock_job::<MockReturnExecutor>()
+            .with_data(MockExecutionResult::Snooze {
+                delay: Duration::from_secs(10),
+            })
+            .with_max_attempts(1)
+            .with_attempt(1);
+
+        backend.push_to_stream(MockReturnExecutor::NAME.into(), Ok(job));
+
+        tokio::task::yield_now().await;
+
+        handle.graceful_shutdown().await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn run_job_cancelled() {
+        let backend = MockBackend::default();
+        backend.expect_mark_job_cancelled_returning(Ok(()));
+
+        let handle =
+            Rexecutor::<MockBackend, _>::new(backend.clone()).with_executor::<MockReturnExecutor>();
+
+        tokio::task::yield_now().await;
+
+        let job = Job::mock_job::<MockReturnExecutor>()
+            .with_data(MockExecutionResult::Cancelled {
+                reason: "No need anymore".to_owned(),
+            })
+            .with_max_attempts(1)
+            .with_attempt(1);
+
+        backend.push_to_stream(MockReturnExecutor::NAME.into(), Ok(job));
+
+        tokio::task::yield_now().await;
+
+        handle.graceful_shutdown().await.unwrap();
     }
 }

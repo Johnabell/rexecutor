@@ -148,7 +148,7 @@ mod tests {
     async fn enqueue() {
         let expected_job_id = JobId(0);
 
-        let mut backend = MockBackend::default();
+        let backend = MockBackend::default();
         backend.expect_enqueue_returning(Ok(expected_job_id));
 
         let job_id = SimpleExecutor::builder()
