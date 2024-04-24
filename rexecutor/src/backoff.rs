@@ -504,6 +504,28 @@ mod test {
     }
 
     #[test]
+    fn polynomial_backoff() {
+        let delay = TimeDelta::minutes(1);
+        let strategy = BackoffStrategy::polynomial(delay, 2);
+
+        for i in 1..100 {
+            assert_eq!(strategy.backoff(i), delay * i.pow(2) as _);
+        }
+    }
+
+    #[test]
+    fn polynomial_backoff_with_max() {
+        let delay = TimeDelta::minutes(1);
+        let max = TimeDelta::minutes(10);
+        let strategy = BackoffStrategy::polynomial(delay, 2).with_max(max);
+
+        for i in 1..100 {
+            let backoff = strategy.backoff(i);
+            assert!(backoff <= max);
+        }
+    }
+
+    #[test]
     fn linear_backoff() {
         let delay = TimeDelta::minutes(1);
         let strategy = BackoffStrategy::linear(delay);

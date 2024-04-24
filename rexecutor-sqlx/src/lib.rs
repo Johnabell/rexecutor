@@ -1,4 +1,4 @@
-use std::{collections::HashMap, ops::Deref, sync::Arc};
+use std::{collections::HashMap, sync::Arc};
 
 use chrono::{DateTime, Utc};
 use rexecutor::{
@@ -30,16 +30,6 @@ pub struct RexecutorPgBackend {
     subscribers: Arc<RwLock<HashMap<&'static str, Vec<Subscriber>>>>,
 }
 
-pub struct RexecutorPgBackendRef<'a>(&'a PgPool);
-
-impl std::ops::Deref for RexecutorPgBackend {
-    type Target = PgPool;
-
-    fn deref(&self) -> &Self::Target {
-        &self.pool
-    }
-}
-
 #[derive(Deserialize, Debug)]
 struct Notification {
     executor: String,
@@ -62,7 +52,7 @@ impl RexecutorPgBackend {
             pool,
             subscribers: Default::default(),
         };
-        let mut listener = PgListener::connect_with(&this)
+        let mut listener = PgListener::connect_with(&this.pool)
             .await
             .map_err(|_| BackendError::BadStateError)?;
         listener
@@ -144,7 +134,7 @@ impl RexecutorPgBackend {
             "#,
             executor
         )
-        .fetch_optional(self.deref())
+        .fetch_optional(&self.pool)
         .await
     }
 
@@ -169,7 +159,7 @@ impl RexecutorPgBackend {
             job.priority as i32,
             &job.tags,
         )
-        .fetch_one(self.deref())
+        .fetch_one(&self.pool)
         .await?;
         Ok(data.id.into())
     }
@@ -178,7 +168,7 @@ impl RexecutorPgBackend {
         let Some(uniqueness_criteria) = job.uniqueness_criteria else {
             panic!();
         };
-        let mut tx = self.begin().await?;
+        let mut tx = self.pool.begin().await?;
         let unique_identifier = uniqueness_criteria.unique_identifier(job.executor.as_str());
         sqlx::query!("SELECT pg_advisory_xact_lock($1)", unique_identifier)
             .execute(&mut *tx)
@@ -271,7 +261,7 @@ impl RexecutorPgBackend {
             WHERE id = $1"#,
             i32::from(id),
         )
-        .execute(self.deref())
+        .execute(&self.pool)
         .await?;
         Ok(())
     }
@@ -302,7 +292,7 @@ impl RexecutorPgBackend {
             error.message,
             next_scheduled_at,
         )
-        .execute(self.deref())
+        .execute(&self.pool)
         .await?;
         Ok(())
     }
@@ -322,7 +312,7 @@ impl RexecutorPgBackend {
             i32::from(id),
             next_scheduled_at,
         )
-        .execute(self.deref())
+        .execute(&self.pool)
         .await?;
         Ok(())
     }
@@ -347,7 +337,7 @@ impl RexecutorPgBackend {
             Text(ErrorType::from(error.error_type)) as _,
             error.message,
         )
-        .execute(self.deref())
+        .execute(&self.pool)
         .await?;
         Ok(())
     }
@@ -372,7 +362,7 @@ impl RexecutorPgBackend {
             Text(ErrorType::from(error.error_type)) as _,
             error.message,
         )
-        .execute(self.deref())
+        .execute(&self.pool)
         .await?;
         Ok(())
     }
@@ -391,13 +381,13 @@ impl RexecutorPgBackend {
             "#,
             executor
         )
-        .fetch_optional(self.deref())
+        .fetch_optional(&self.pool)
         .await?
         .map(|data| data.scheduled_at))
     }
 
     async fn delete_from_spec(&self, spec: &PruneSpec) -> sqlx::Result<()> {
-        let result = spec.query().build().execute(self.deref()).await?;
+        let result = spec.query().build().execute(&self.pool).await?;
         tracing::debug!(
             ?spec,
             "Clean up query completed {} rows removed",
@@ -421,7 +411,7 @@ impl RexecutorPgBackend {
             i32::from(id),
             Utc::now(),
         )
-        .execute(self.deref())
+        .execute(&self.pool)
         .await?;
         Ok(())
     }
@@ -445,7 +435,7 @@ impl RexecutorPgBackend {
             job.priority as i32,
             &job.tags,
         )
-        .fetch_one(self.deref())
+        .fetch_one(&self.pool)
         .await?;
         Ok(())
     }
@@ -454,7 +444,7 @@ impl RexecutorPgBackend {
         query
             .query()
             .build_query_as::<Job>()
-            .fetch_all(self.deref())
+            .fetch_all(&self.pool)
             .await
     }
 }

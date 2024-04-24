@@ -140,7 +140,7 @@ where
 
 #[cfg(test)]
 mod tests {
-    use crate::{backend::test::MockBackend, executor::test::SimpleExecutor, job::JobId};
+    use crate::{backend::MockBackend, executor::test::SimpleExecutor};
 
     use super::*;
 
@@ -148,8 +148,10 @@ mod tests {
     async fn enqueue() {
         let expected_job_id = JobId(0);
 
-        let backend = MockBackend::default();
-        backend.expect_enqueue_returning(Ok(expected_job_id));
+        let mut backend = MockBackend::default();
+        backend
+            .expect_enqueue()
+            .returning(move |_| Ok(expected_job_id));
 
         let job_id = SimpleExecutor::builder()
             .with_max_attempts(2)

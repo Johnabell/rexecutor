@@ -27,3 +27,8 @@ description = "Check if sqlx-data is out of date"
 command = "cargo"
 args = ["sqlx", "prepare", "--check", "--", "--lib"]
 env = { "SQLX_OFFLINE" = "false" }
+
+[tasks.cov]
+description = "Code coverage"
+command = "cargo"
+args = ["llvm-cov", "--html", "--fail-under-lines", "90", "${@}"]

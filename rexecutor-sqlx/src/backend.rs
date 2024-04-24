@@ -119,10 +119,8 @@ impl Backend for RexecutorPgBackend {
 
 #[cfg(test)]
 mod test {
-    use crate::JobStatus;
-    use std::ops::Deref;
-
     use crate::types::Job;
+    use crate::JobStatus;
 
     use super::*;
     use chrono::TimeDelta;
@@ -179,7 +177,7 @@ mod test {
                 FROM rexecutor_jobs
                 "#
             )
-            .fetch_all(self.deref())
+            .fetch_all(&self.pool)
             .await
         }
     }

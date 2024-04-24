@@ -1,0 +1,8 @@
+[env]
+DATABASE_URL = "postgresql://postgres:postgres@localhost:5432/postgres"
+SQLX_OFFLINE=true
+
+[tasks.cov]
+description = "Code coverage"
+command = "cargo"
+args = ["llvm-cov", "--html", "--fail-under-lines", "90", "${@}"]

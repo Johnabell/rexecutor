@@ -187,8 +187,6 @@ pub(crate) mod test {
     use async_trait::async_trait;
     use serde::{Deserialize, Serialize};
 
-    use crate::job::Job;
-
     use super::*;
 
     pub(crate) struct SimpleExecutor;
@@ -206,15 +204,17 @@ pub(crate) mod test {
 
     pub(crate) struct MockReturnExecutor;
 
-    #[derive(Debug, Clone, Serialize, Deserialize)]
+    #[derive(Debug, Clone, Serialize, Deserialize, Hash)]
     pub(crate) enum MockExecutionResult {
         Done,
+        Panic,
+        Timeout,
         Cancelled { reason: String },
         Snooze { delay: std::time::Duration },
         Error { error: MockError },
     }
 
-    #[derive(Debug, Clone, Serialize, Deserialize)]
+    #[derive(Debug, Clone, Serialize, Deserialize, Hash)]
     pub(crate) struct MockError(pub String);
     impl std::fmt::Display for MockError {
         fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -236,6 +236,11 @@ pub(crate) mod test {
         const MAX_ATTEMPTS: u16 = 2;
         async fn execute(job: Job<Self::Data, Self::Metadata>) -> ExecutionResult {
             match job.data {
+                MockExecutionResult::Panic => panic!("job paniced"),
+                MockExecutionResult::Timeout => {
+                    tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+                    ExecutionResult::Done
+                }
                 MockExecutionResult::Done => ExecutionResult::Done,
                 MockExecutionResult::Cancelled { reason } => ExecutionResult::Cancelled {
                     reason: Box::new(reason),
@@ -246,6 +251,14 @@ pub(crate) mod test {
                 MockExecutionResult::Error { error } => ExecutionResult::Error {
                     error: Box::new(error),
                 },
+            }
+        }
+
+        fn timeout(job: &Job<Self::Data, Self::Metadata>) -> Option<std::time::Duration> {
+            if matches!(job.data, MockExecutionResult::Timeout) {
+                Some(std::time::Duration::from_millis(1))
+            } else {
+                None
             }
         }
     }
