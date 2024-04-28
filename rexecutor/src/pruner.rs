@@ -2,9 +2,9 @@ use std::{ops::Sub, time::Duration};
 
 use chrono::{TimeDelta, Utc};
 use futures::{stream::FuturesOrdered, StreamExt};
-use tokio::sync::mpsc;
+use tokio_util::sync::CancellationToken;
 
-use crate::{backend::Backend, executor::Executor, job::JobStatus, ExecutorHandle};
+use crate::{backend::Backend, executor::Executor, job::JobStatus};
 
 pub struct PrunerConfig {
     schedule: cron::Schedule,
@@ -166,10 +166,8 @@ where
         Self { backend, config }
     }
 
-    pub fn spawn(self) -> ExecutorHandle {
-        let (sender, mut rx) = mpsc::unbounded_channel();
-
-        let handle = tokio::spawn({
+    pub fn spawn(self, cancellation_token: CancellationToken) {
+        tokio::spawn({
             async move {
                 loop {
                     let next = self
@@ -191,18 +189,14 @@ where
                                 tokio::time::sleep(delay.to_std().unwrap()).await;
                             }
                         }
-                        _ = rx.recv() => {
+                        _ = cancellation_token.cancelled() => {
+                            tracing::debug!("Shutting down the job pruner");
                             break;
                         },
                     }
                 }
-                tracing::debug!("Shutting down the job pruner");
             }
         });
-        ExecutorHandle {
-            sender,
-            handle: Some(handle),
-        }
     }
 
     async fn prune(&self) {

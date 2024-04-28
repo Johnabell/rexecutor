@@ -3,13 +3,13 @@ use std::{marker::PhantomData, time::Duration};
 use chrono::{TimeDelta, Utc};
 use futures::StreamExt;
 use serde::de::DeserializeOwned;
-use tokio::{sync::mpsc, task::JoinError};
+use tokio::task::JoinError;
+use tokio_util::sync::CancellationToken;
 use tracing::{instrument, Instrument};
 
 use crate::{
     backend::Backend,
     executor::{CancellationReason, ExecutionError, ExecutionResult, Executor},
-    ExecutorHandle,
 };
 
 use super::{ErrorType, Job, JobId};
@@ -39,15 +39,13 @@ where
         }
     }
 
-    pub(crate) fn spawn(self) -> ExecutorHandle {
-        let (sender, mut rx) = mpsc::unbounded_channel();
-
-        let handle = tokio::spawn({
+    pub(crate) fn spawn(self, cancellation_token: CancellationToken) {
+        tokio::spawn({
             async move {
                 self.backend
                     .subscribe_new_events(E::NAME.into())
                     .await
-                    .take_until(rx.recv())
+                    .take_until(cancellation_token.cancelled())
                     .for_each_concurrent(E::MAX_CONCURRENCY, {
                         |message| async {
                             match message {
@@ -72,10 +70,6 @@ where
                 tracing::debug!("Shutting down Rexecutor job runner for {}", E::NAME);
             }
         });
-        ExecutorHandle {
-            sender,
-            handle: Some(handle),
-        }
     }
 
     #[instrument(skip(self, job), fields(job_id))]

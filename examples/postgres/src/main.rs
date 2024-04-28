@@ -29,7 +29,7 @@ pub async fn main() {
     let backend = RexecutorPgBackend::from_db_url(&db_url).await.unwrap();
     backend.run_migrations().await.unwrap();
 
-    let handle = Rexecutor::new(backend)
+    let _guard = Rexecutor::new(backend)
         .with_executor::<BasicJob>()
         .with_executor::<TimeoutJob>()
         .with_executor::<CancelledJob>()
@@ -39,7 +39,8 @@ pub async fn main() {
         .with_cron_executor::<CronJob>(every_second, "tock".to_owned())
         .with_job_pruner(pruner_config)
         .set_global_backend()
-        .unwrap();
+        .unwrap()
+        .drop_guard();
 
     let job_id = BasicJob::builder()
         .with_max_attempts(3)
@@ -111,8 +112,6 @@ pub async fn main() {
     .unwrap();
 
     assert!(recent_jobs.len() >= 2);
-
-    let _ = handle.graceful_shutdown().await;
 }
 
 struct BasicJob;

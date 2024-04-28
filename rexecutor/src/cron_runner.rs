@@ -3,12 +3,9 @@ use std::{hash::Hash, marker::PhantomData, ops::Sub, time::Duration};
 use chrono::{DateTime, TimeDelta, Utc};
 use cron::Schedule;
 use serde::{de::DeserializeOwned, Serialize};
-use tokio::sync::mpsc;
+use tokio_util::sync::CancellationToken;
 
-use crate::{
-    backend::Backend, executor::Executor, job::uniqueness_criteria::UniquenessCriteria,
-    ExecutorHandle,
-};
+use crate::{backend::Backend, executor::Executor, job::uniqueness_criteria::UniquenessCriteria};
 
 pub(crate) struct CronRunner<B, E>
 where
@@ -39,9 +36,8 @@ where
         }
     }
 
-    pub(crate) fn spawn(self) -> ExecutorHandle {
-        let (sender, mut rx) = mpsc::unbounded_channel();
-        let handle = tokio::spawn({
+    pub(crate) fn spawn(self, cancellation_token: CancellationToken) {
+        tokio::spawn({
             async move {
                 loop {
                     let next = self
@@ -62,19 +58,14 @@ where
                                 tokio::time::sleep(delay.to_std().unwrap()).await;
                             }
                         },
-                        _ = rx.recv() => {
+                        _ = cancellation_token.cancelled() => {
+                            tracing::debug!("Shutting down cron scheduler for {}", E::NAME);
                             break;
                         },
                     }
                 }
-                tracing::debug!("Shutting down cron scheduler for {}", E::NAME);
             }
         });
-
-        ExecutorHandle {
-            sender,
-            handle: Some(handle),
-        }
     }
 
     async fn enqueue_job(&self, scheduled_at: DateTime<Utc>) {

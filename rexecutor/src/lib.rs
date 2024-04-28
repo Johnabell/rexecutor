@@ -15,10 +15,8 @@ use job::runner::JobRunner;
 use pruner::{PrunerConfig, PrunerRunner};
 use serde::{de::DeserializeOwned, Serialize};
 use thiserror::Error;
-use tokio::{
-    sync::{mpsc, OnceCell},
-    task::JoinHandle,
-};
+use tokio::sync::OnceCell;
+use tokio_util::sync::CancellationToken;
 
 trait InternalRexecutorState {}
 
@@ -30,8 +28,8 @@ impl InternalRexecutorState for GlobalSet {}
 #[derive(Debug)]
 #[allow(private_bounds)]
 pub struct Rexecutor<B: Backend, State: InternalRexecutorState> {
-    executors: Vec<ExecutorHandle>,
     backend: B,
+    cancellation_token: CancellationToken,
     _state: PhantomData<State>,
 }
 
@@ -44,42 +42,20 @@ where
     }
 }
 
-#[derive(Debug)]
-struct ExecutorHandle {
-    sender: mpsc::UnboundedSender<Message>,
-    handle: Option<JoinHandle<()>>,
-}
-
-impl ExecutorHandle {
-    async fn graceful_shutdown(&mut self) -> Result<(), RexecuterError> {
-        self.sender
-            .send(Message::Terminate)
-            .map_err(|_| RexecuterError::GracefulShutdownFailed)?;
-        if let Some(handle) = self.handle.take() {
-            handle
-                .await
-                .map_err(|_| RexecuterError::GracefulShutdownFailed)?;
-        }
-        Ok(())
-    }
-}
-
-enum Message {
-    Terminate,
-}
-
 impl<B> Rexecutor<B, GlobalUnset>
 where
     B: Backend,
 {
     pub fn new(backend: B) -> Self {
         Self {
-            executors: Default::default(),
+            cancellation_token: Default::default(),
             backend,
             _state: PhantomData,
         }
     }
 }
+
+pub struct DropGuard(tokio_util::sync::DropGuard);
 
 static GLOBAL_BACKEND: OnceCell<Arc<dyn Backend + 'static + Sync + Send>> = OnceCell::const_new();
 
@@ -96,7 +72,7 @@ where
             })?;
 
         Ok(Rexecutor {
-            executors: self.executors,
+            cancellation_token: self.cancellation_token,
             backend: self.backend,
             _state: PhantomData,
         })
@@ -109,46 +85,40 @@ where
     B: Backend + Send + 'static + Sync + Clone,
     State: InternalRexecutorState,
 {
-    pub fn with_executor<E>(mut self) -> Self
+    pub fn with_executor<E>(self) -> Self
     where
         E: Executor + 'static + Sync + Send,
         E::Data: Send + DeserializeOwned,
         E::Metadata: Serialize + DeserializeOwned + Send,
     {
-        let handle = JobRunner::<B, E>::new(self.backend.clone()).spawn();
-        self.executors.push(handle);
-
+        JobRunner::<B, E>::new(self.backend.clone()).spawn(self.cancellation_token.clone());
         self
     }
 
-    pub fn with_cron_executor<E>(mut self, schedule: cron::Schedule, data: E::Data) -> Self
+    pub fn with_cron_executor<E>(self, schedule: cron::Schedule, data: E::Data) -> Self
     where
         E: Executor + 'static + Sync + Send,
         E::Data: Send + Sync + Serialize + DeserializeOwned + Clone + Hash,
         E::Metadata: Serialize + DeserializeOwned + Send + Sync,
     {
-        let handle = CronRunner::<B, E>::new(self.backend.clone(), schedule, data).spawn();
-        self.executors.push(handle);
+        CronRunner::<B, E>::new(self.backend.clone(), schedule, data)
+            .spawn(self.cancellation_token.clone());
 
         self.with_executor::<E>()
     }
 
-    pub fn with_job_pruner(mut self, config: PrunerConfig) -> Self {
-        let handle = PrunerRunner::new(self.backend.clone(), config).spawn();
-        self.executors.push(handle);
+    pub fn with_job_pruner(self, config: PrunerConfig) -> Self {
+        PrunerRunner::new(self.backend.clone(), config).spawn(self.cancellation_token.clone());
         self
     }
 
-    pub async fn graceful_shutdown(mut self) -> Result<Vec<()>, RexecuterError> {
+    pub fn graceful_shutdown(self) {
         tracing::debug!("Shutting down Rexecutor tasks");
-        futures::future::join_all(
-            self.executors
-                .iter_mut()
-                .map(ExecutorHandle::graceful_shutdown),
-        )
-        .await
-        .into_iter()
-        .collect()
+        self.cancellation_token.cancel();
+    }
+
+    pub fn drop_guard(self) -> DropGuard {
+        DropGuard(self.cancellation_token.drop_guard())
     }
 }
 
@@ -185,16 +155,17 @@ mod tests {
         let sender = backend.expect_subscribe_to_new_events_with_stream();
         let backend = Arc::new(backend);
 
-        let handle = Rexecutor::<_, _>::new(backend.clone()).with_executor::<MockReturnExecutor>();
+        let _guard = Rexecutor::<_, _>::new(backend.clone())
+            .with_executor::<MockReturnExecutor>()
+            .drop_guard();
 
         tokio::task::yield_now().await;
 
         sender.send(Err(BackendError::BadStateError)).unwrap();
 
         tokio::task::yield_now().await;
-
-        handle.graceful_shutdown().await.unwrap();
     }
+
     #[tokio::test]
     async fn run_job_success() {
         let mut backend = MockBackend::default();
@@ -389,13 +360,12 @@ mod tests {
         backend.expect_enqueue().returning(|_| Ok(0.into()));
         let backend = Arc::new(backend);
 
-        let handle = Rexecutor::new(backend.clone())
-            .with_cron_executor::<MockReturnExecutor>(every_second, MockExecutionResult::Done);
+        let _guard = Rexecutor::new(backend.clone())
+            .with_cron_executor::<MockReturnExecutor>(every_second, MockExecutionResult::Done)
+            .drop_guard();
 
         tokio::task::yield_now().await;
         tokio::time::sleep(Duration::from_secs(1)).await;
-
-        handle.graceful_shutdown().await.unwrap();
     }
 
     #[tokio::test]
@@ -408,13 +378,12 @@ mod tests {
             .returning(|_| Err(BackendError::BadStateError));
         let backend = Arc::new(backend);
 
-        let handle = Rexecutor::new(backend.clone())
-            .with_cron_executor::<MockReturnExecutor>(every_second, MockExecutionResult::Done);
+        let _guard = Rexecutor::new(backend.clone())
+            .with_cron_executor::<MockReturnExecutor>(every_second, MockExecutionResult::Done)
+            .drop_guard();
 
         tokio::task::yield_now().await;
         tokio::time::sleep(Duration::from_secs(1)).await;
-
-        handle.graceful_shutdown().await.unwrap();
     }
 
     #[tokio::test]
@@ -427,12 +396,12 @@ mod tests {
         let pruner = PrunerConfig::new(schedule)
             .with_pruner(Pruner::max_length(5, JobStatus::Complete).only::<MockReturnExecutor>());
 
-        let handle = Rexecutor::new(backend.clone()).with_job_pruner(pruner);
+        let _guard = Rexecutor::new(backend.clone())
+            .with_job_pruner(pruner)
+            .drop_guard();
 
         tokio::task::yield_now().await;
         tokio::time::sleep(Duration::from_secs(1)).await;
-
-        handle.graceful_shutdown().await.unwrap();
     }
 
     #[tokio::test]
@@ -447,23 +416,23 @@ mod tests {
         let pruner = PrunerConfig::new(schedule)
             .with_pruner(Pruner::max_length(5, JobStatus::Complete).only::<MockReturnExecutor>());
 
-        let handle = Rexecutor::new(backend.clone()).with_job_pruner(pruner);
+        let _guard = Rexecutor::new(backend.clone())
+            .with_job_pruner(pruner)
+            .drop_guard();
 
         tokio::task::yield_now().await;
         tokio::time::sleep(Duration::from_secs(1)).await;
-
-        handle.graceful_shutdown().await.unwrap();
     }
 
     async fn run_job(mut backend: MockBackend, job: Job) {
         let sender = backend.expect_subscribe_to_new_events_with_stream();
         let backend = Arc::new(backend);
-        let handle = Rexecutor::new(backend.clone()).with_executor::<MockReturnExecutor>();
+        let _guard = Rexecutor::new(backend.clone())
+            .with_executor::<MockReturnExecutor>()
+            .drop_guard();
 
         tokio::task::yield_now().await;
         sender.send(Ok(job)).unwrap();
         tokio::task::yield_now().await;
-
-        handle.graceful_shutdown().await.unwrap();
     }
 }
