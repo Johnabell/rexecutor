@@ -11,19 +11,56 @@ use crate::{
 };
 type Result<T> = std::result::Result<T, RexecuterError>;
 
+/// The default backoff strategy for exucutor jobs:
+///  - exponential backoff with initial backoff of 4 seconds, and
+///  - a max backoff of seven days,
+///  - with a 10% jitter margin.
 const DEFAULT_BACKOFF_STRATEGY: BackoffStrategy<Exponential> =
     BackoffStrategy::exponential(TimeDelta::seconds(4))
         .with_max(TimeDelta::days(7))
         .with_jitter(Jitter::Relative(0.1));
 
+/// An enqueuable execution unit.
 #[async_trait]
 pub trait Executor {
+    /// The type representing the executors arguments/data.
+    ///
+    /// If this is not needed it can be set to unit `()`.
     type Data;
+    /// The type for storing the executors metadata.
+    ///
+    /// If this is not needed it can be set to unit `()`.
     type Metadata;
+    /// The name of the executor.
+    ///
+    /// This is used to associate the jobs stored in the backend with this particular executor.
+    ///
+    /// This should be set to a unique value for the backend to ensure no clashes with other
+    /// executors running on the same backend.
+    ///
+    /// The motivation for using a static string here is to enable developers to rename their rust
+    /// types for their executor without breaking the integration with the backend.
     const NAME: &'static str;
+    /// The maximum number of attempts to try this job before it is discarded.
+    ///
+    /// When enqueuing any given job this can be overridden via [`JobBuilder::with_max_attempts`].
     const MAX_ATTEMPTS: u16 = 5;
+    /// The maximum number of concurrent jobs to be running. If set to [`None`] there will be no
+    /// concurrency limit and an arbitrary number can be ran simultaneously.
     const MAX_CONCURRENCY: Option<usize> = None;
+    /// This flag should be set to true if the job is computationally expensive.
+    ///
+    /// This is to prevent a computationally expensive job locking up the asynchronous runtime.
+    ///
+    /// Under the covers this results in the job executor being ran via
+    /// [`tokio::task::spawn_blocking`]. See it's docs for more details about blocking futures.
     const BLOCKING: bool = false;
+    /// This can be used to ensure that only unique jobs matching the [`UniquenessCriteria`] are
+    /// inserted.
+    ///
+    /// If there is already a job inserted matching the given constraints there is the option to
+    /// either update the current job or do nothing. See the docs of [`UniquenessCriteria`] for
+    /// more details.
     const UNIQUENESS_CRITERIA: Option<UniquenessCriteria<'static>> = None;
 
     async fn execute(job: Job<Self::Data, Self::Metadata>) -> ExecutionResult;

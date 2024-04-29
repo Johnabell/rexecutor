@@ -1,4 +1,5 @@
 [tasks.cov]
 description = "Code coverage"
 command = "cargo"
-args = ["llvm-cov", "--html", "--fail-under-lines", "90", "${@}"]
+toolchain = "nightly"
+args = ["llvm-cov", "--html", "--fail-under-lines", "90", "--doctests", "${@}"]

@@ -30,5 +30,6 @@ env = { "SQLX_OFFLINE" = "false" }
 
 [tasks.cov]
 description = "Code coverage"
+toolchain = "nightly"
 command = "cargo"
-args = ["llvm-cov", "--html", "--fail-under-lines", "90", "${@}"]
+args = ["llvm-cov", "--html", "--fail-under-lines", "90", "--doctests", "${@}"]

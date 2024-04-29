@@ -106,7 +106,7 @@ pub async fn main() {
         Where::tagged_by_one_of(&["second_job", "initial_job"])
             .and(!Where::status_equal(JobStatus::Discarded))
             .and(!Where::status_equal(JobStatus::Cancelled))
-            .and(!Where::scheduled_at_older_than(TimeDelta::minutes(10))),
+            .and(Where::scheduled_at_within_the_last(TimeDelta::minutes(10))),
     )
     .await
     .unwrap();

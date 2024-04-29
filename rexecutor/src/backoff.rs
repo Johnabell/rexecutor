@@ -1,4 +1,4 @@
-//! Common backoff strategies for use as part of [crate::Executor::backoff].
+//! Common backoff strategies for use as part of [`crate::Executor::backoff`].
 //!
 //! This module provides four main backoff strategies:
 //!
@@ -14,9 +14,7 @@
 //! # Example
 //!
 //! ```
-//! # use rexecutor::backoff::BackoffStrategy;
-//! # use rexecutor::backoff::Strategy;
-//! # use rexecutor::backoff::Jitter;
+//! # use rexecutor::prelude::*;
 //! # use chrono::TimeDelta;
 //! let strategy = BackoffStrategy::linear(TimeDelta::seconds(20))
 //!     .with_max(TimeDelta::seconds(60))
@@ -38,7 +36,7 @@ use rand::Rng;
 
 /// Type that can be used to implement a backoff strategy.
 pub trait Strategy {
-    /// Given a job attempt as a number returns the [TimeDelta] to wait before the job should be
+    /// Given a job attempt as a number returns the [`TimeDelta`] to wait before the job should be
     /// retried.
     fn backoff(&self, attempt: u16) -> TimeDelta;
 }
@@ -47,14 +45,13 @@ pub trait Strategy {
 ///
 /// Always returns the same value no matter what the attempt is.
 ///
-/// __Note:__ This type cannot be constructed directly, instead [BackoffStrategy::constant]
+/// __Note:__ This type cannot be constructed directly, instead [`BackoffStrategy::constant`]
 /// should be used.
 ///
 /// # Example
 ///
 /// ```
-/// # use rexecutor::backoff::BackoffStrategy;
-/// # use rexecutor::backoff::Strategy;
+/// # use rexecutor::prelude::*;
 /// # use chrono::TimeDelta;
 ///
 /// let strategy = BackoffStrategy::constant(TimeDelta::seconds(10));
@@ -77,16 +74,15 @@ impl Strategy for Constant {
 /// Exponential backoff strategy.
 ///
 /// Grows exponentially with each attempt. It is also possible, and advisable, to set the maximum
-/// backoff using [BackoffStrategy::with_max].
+/// backoff using [`BackoffStrategy::with_max`].
 ///
-/// __Note:__ This type cannot be constructed directly, instead [BackoffStrategy::exponential]
+/// __Note:__ This type cannot be constructed directly, instead [`BackoffStrategy::exponential`]
 /// should be used.
 ///
 /// # Example
 ///
 /// ```
-/// # use rexecutor::backoff::BackoffStrategy;
-/// # use rexecutor::backoff::Strategy;
+/// # use rexecutor::prelude::*;
 /// # use chrono::TimeDelta;
 ///
 /// let strategy =
@@ -121,16 +117,15 @@ impl Strategy for Exponential {
 /// Linear backoff strategy.
 ///
 /// Grows linear with each attempt. It is also possible to set the maximum backoff using
-/// [BackoffStrategy::with_max].
+/// [`BackoffStrategy::with_max`].
 ///
-/// __Note:__ This type cannot be constructed directly, instead [BackoffStrategy::linear]
+/// __Note:__ This type cannot be constructed directly, instead [`BackoffStrategy::linear`]
 /// should be used.
 ///
 /// # Example
 ///
 /// ```
-/// # use rexecutor::backoff::BackoffStrategy;
-/// # use rexecutor::backoff::Strategy;
+/// # use rexecutor::prelude::*;
 /// # use chrono::TimeDelta;
 ///
 /// let strategy = BackoffStrategy::linear(TimeDelta::seconds(10)).with_max(TimeDelta::seconds(40));
@@ -159,16 +154,15 @@ impl Strategy for Linear {
 /// Polynomial backoff strategy.
 ///
 /// Grows in a polynomial manor with each attempt. It is also possible to set the maximum backoff using
-/// [BackoffStrategy::with_max].
+/// [`BackoffStrategy::with_max`].
 ///
-/// __Note:__ This type cannot be constructed directly, instead [BackoffStrategy::polynomial]
+/// __Note:__ This type cannot be constructed directly, instead [`BackoffStrategy::polynomial`]
 /// should be used.
 ///
 /// # Example
 ///
 /// ```
-/// # use rexecutor::backoff::BackoffStrategy;
-/// # use rexecutor::backoff::Strategy;
+/// # use rexecutor::prelude::*;
 /// # use chrono::TimeDelta;
 ///
 /// let strategy =
@@ -217,7 +211,7 @@ impl Jitter {
     }
 }
 
-/// Common backoff strategies for use as part of [crate::Executor::backoff].
+/// Common backoff strategies for use as part of [`crate::Executor::backoff`].
 ///
 /// This type provides four main backoff strategies:
 ///
@@ -233,9 +227,7 @@ impl Jitter {
 /// # Example
 ///
 /// ```
-/// # use rexecutor::backoff::BackoffStrategy;
-/// # use rexecutor::backoff::Strategy;
-/// # use rexecutor::backoff::Jitter;
+/// # use rexecutor::prelude::*;
 /// # use chrono::TimeDelta;
 /// let strategy = BackoffStrategy::linear(TimeDelta::seconds(20))
 ///     .with_max(TimeDelta::seconds(60))
@@ -259,15 +251,14 @@ pub struct BackoffStrategy<T: Strategy> {
 }
 
 impl BackoffStrategy<Constant> {
-    /// Creates a [BackoffStrategy] with a constant backoff strategy.
+    /// Creates a [`BackoffStrategy`] with a constant backoff strategy.
     ///
     /// This will always return the same value no matter what the attempt number is.
     ///
     /// # Example
     ///
     /// ```
-    /// # use rexecutor::backoff::BackoffStrategy;
-    /// # use rexecutor::backoff::Strategy;
+    /// # use rexecutor::prelude::*;
     /// # use chrono::TimeDelta;
     ///
     /// let strategy = BackoffStrategy::constant(TimeDelta::seconds(10));
@@ -282,16 +273,15 @@ impl BackoffStrategy<Constant> {
 }
 
 impl BackoffStrategy<Exponential> {
-    /// Creates a [BackoffStrategy] with a exponential backoff strategy.
+    /// Creates a [`BackoffStrategy`] with a exponential backoff strategy.
     ///
     /// Grows exponentially with each attempt. It is also possible, and advisable, to set the maximum
-    /// backoff using [BackoffStrategy::with_max].
+    /// backoff using [`BackoffStrategy::with_max`].
     ///
     /// # Example
     ///
     /// ```
-    /// # use rexecutor::backoff::BackoffStrategy;
-    /// # use rexecutor::backoff::Strategy;
+    /// # use rexecutor::prelude::*;
     /// # use chrono::TimeDelta;
     ///
     /// let strategy =
@@ -308,7 +298,7 @@ impl BackoffStrategy<Exponential> {
         Self::new(Exponential { base, max: None })
     }
 
-    /// Clamps the maximum value to be returned by [Strategy::backoff] to `max_delay`.
+    /// Clamps the maximum value to be returned by [`Strategy::backoff`] to `max_delay`.
     pub const fn with_max(mut self, max_delay: TimeDelta) -> Self {
         self.strategy.max = Some(max_delay);
         self
@@ -316,16 +306,15 @@ impl BackoffStrategy<Exponential> {
 }
 
 impl BackoffStrategy<Linear> {
-    /// Creates a [BackoffStrategy] with a linear backoff strategy.
+    /// Creates a [`BackoffStrategy`] with a linear backoff strategy.
     ///
     /// Grows linear with each attempt. It is also possible to set the maximum backoff using
-    /// [BackoffStrategy::with_max].
+    /// [`BackoffStrategy::with_max`].
     ///
     /// # Example
     ///
     /// ```
-    /// # use rexecutor::backoff::BackoffStrategy;
-    /// # use rexecutor::backoff::Strategy;
+    /// # use rexecutor::prelude::*;
     /// # use chrono::TimeDelta;
     ///
     /// let strategy = BackoffStrategy::linear(TimeDelta::seconds(10)).with_max(TimeDelta::seconds(40));
@@ -340,7 +329,7 @@ impl BackoffStrategy<Linear> {
         Self::new(Linear { factor, max: None })
     }
 
-    /// Clamps the maximum value to be returned by [Strategy::backoff] to `max_delay`.
+    /// Clamps the maximum value to be returned by [`Strategy::backoff`] to `max_delay`.
     pub const fn with_max(mut self, max_delay: TimeDelta) -> Self {
         self.strategy.max = Some(max_delay);
         self
@@ -348,16 +337,15 @@ impl BackoffStrategy<Linear> {
 }
 
 impl BackoffStrategy<Polynomial> {
-    /// Creates a [BackoffStrategy] with a polynomial backoff strategy.
+    /// Creates a [`BackoffStrategy`] with a polynomial backoff strategy.
     ///
     /// Grows in a polynomial manor with each attempt. It is also possible to set the maximum backoff using
-    /// [BackoffStrategy::with_max].
+    /// [`BackoffStrategy::with_max`].
     ///
     /// # Example
     ///
     /// ```
-    /// # use rexecutor::backoff::BackoffStrategy;
-    /// # use rexecutor::backoff::Strategy;
+    /// # use rexecutor::prelude::*;
     /// # use chrono::TimeDelta;
     ///
     /// let strategy =
@@ -378,7 +366,7 @@ impl BackoffStrategy<Polynomial> {
         })
     }
 
-    /// Clamps the maximum value to be returned by [Strategy::backoff] to `max_delay`.
+    /// Clamps the maximum value to be returned by [`Strategy::backoff`] to `max_delay`.
     pub const fn with_max(mut self, max_delay: TimeDelta) -> Self {
         self.strategy.max = Some(max_delay);
         self
@@ -389,16 +377,16 @@ impl<T> BackoffStrategy<T>
 where
     T: Strategy,
 {
-    /// Creates a [BackoffStrategy] with a the given backoff strategy.
+    /// Creates a [`BackoffStrategy`] with a the given backoff strategy.
     ///
     /// Generally this function will only be used if you have implemented your own custom
-    /// [Strategy]. More commonly [BackoffStrategy] is constructed via the strategy specific
+    /// [`Strategy`]. More commonly [`BackoffStrategy`] is constructed via the strategy specific
     /// construct functions:
     ///
-    /// - [BackoffStrategy::constant]
-    /// - [BackoffStrategy::linear]
-    /// - [BackoffStrategy::polynomial]
-    /// - [BackoffStrategy::exponential]
+    /// - [`BackoffStrategy::constant`]
+    /// - [`BackoffStrategy::linear`]
+    /// - [`BackoffStrategy::polynomial`]
+    /// - [`BackoffStrategy::exponential`]
     pub const fn new(strategy: T) -> Self {
         Self {
             strategy,
@@ -407,7 +395,7 @@ where
             min: TimeDelta::zero(),
         }
     }
-    /// Add a jitter to the backoff strategy see [Jitter] for more information about how this
+    /// Add a jitter to the backoff strategy see [`Jitter`] for more information about how this
     /// affects the strategy.
     pub const fn with_jitter(mut self, jitter: Jitter) -> Self {
         self.jitter = Some(jitter);

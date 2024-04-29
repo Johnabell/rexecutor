@@ -86,6 +86,10 @@ impl<'a, D, M> Where<'a, D, M> {
     pub fn scheduled_at_older_than(duration: TimeDelta) -> Self {
         Self(Query::ScheduledAtBefore(Utc::now() - duration))
     }
+
+    pub fn scheduled_at_within_the_last(duration: TimeDelta) -> Self {
+        Self(Query::ScheduledAtAfter(Utc::now() - duration))
+    }
 }
 
 impl<'a, D, M> std::ops::Not for Where<'a, D, M> {
