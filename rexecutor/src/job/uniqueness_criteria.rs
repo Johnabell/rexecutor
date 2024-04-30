@@ -486,7 +486,7 @@ impl<'a> Replace<'a> {
 
 impl<'a> UniquenessCriteria<'a> {
     /// Constructs a [`UniquenessCriteria`] specifying that a duplicate jobs should only be
-    /// detected for jobs for the same [`Executor`].
+    /// detected for jobs for the same [`crate::Executor`].
     ///
     /// # Example
     ///

@@ -55,6 +55,7 @@ where
     }
 }
 
+#[allow(dead_code)]
 pub struct DropGuard(tokio_util::sync::DropGuard);
 
 static GLOBAL_BACKEND: OnceCell<Arc<dyn Backend + 'static + Sync + Send>> = OnceCell::const_new();

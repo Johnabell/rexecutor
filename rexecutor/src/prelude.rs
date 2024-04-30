@@ -1,4 +1,4 @@
-//! The purpose of this module is to alleviate the need to import many of the `[rexecutor]` types.
+//! The purpose of this module is to alleviate the need to import many of the [`crate`] types.
 //!
 //! ```
 //! # #![allow(unused_imports)]

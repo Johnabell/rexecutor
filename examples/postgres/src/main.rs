@@ -104,8 +104,8 @@ pub async fn main() {
     tokio::time::sleep(std::time::Duration::from_secs(1)).await;
     let recent_jobs = BasicJob::query_jobs(
         Where::tagged_by_one_of(&["second_job", "initial_job"])
-            .and(!Where::status_equal(JobStatus::Discarded))
-            .and(!Where::status_equal(JobStatus::Cancelled))
+            .and(!Where::status_equals(JobStatus::Discarded))
+            .and(!Where::status_equals(JobStatus::Cancelled))
             .and(Where::scheduled_at_within_the_last(TimeDelta::minutes(10))),
     )
     .await
