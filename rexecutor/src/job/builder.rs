@@ -1,3 +1,56 @@
+//! The builder for enqueuing jobs.
+//!
+//! Generally this will not be constructed directly and will instead be constructed via
+//! [`Executor::builder`].
+//!
+//! # Overriding [`Executor`] default values
+//!
+//! When defining an [`Executor`] you specify the maximum number of attempts via
+//! [`Executor::MAX_ATTEMPTS`]. However, when inserting a job it is possible to override this value
+//! by calling [`JobBuilder::with_max_attempts`] (if not called the max attempts will be equal to
+//! [`Executor::MAX_ATTEMPTS`].
+//!
+//! Similarly, the executor can define a job uniqueness criteria via
+//! [`Executor::UNIQUENESS_CRITERIA`]. However, using [`JobBuilder::unique`] it is possible to
+//! override this value for a specific job.
+//!
+//! # Global backend
+//!
+//! Jobs can either be enqueued onto a specific backend via [`JobBuilder::enqueue_to_backend`] or
+//! enqueued to a globally set backend via [`JobBuilder::enqueue`]. To make use this API and the
+//! global backend, [`crate::Rexecutor::set_global_backend`] should be called. If this hasn't been
+//! called, then a [`RexecuterError::GlobalBackend`] will be returned.
+//!
+//! # Example
+//!
+//! To enqueue a job to the global backend for an [`Executor`] called `SimpleExecutor` the
+//! following code can be executed:
+//!
+//! ```
+//! # use rexecutor::prelude::*;
+//! # use chrono::TimeDelta;
+//! # pub(crate) struct SimpleExecutor;
+//! #
+//! # #[async_trait::async_trait]
+//! # impl Executor for SimpleExecutor {
+//! #     type Data = String;
+//! #     type Metadata = String;
+//! #     const NAME: &'static str = "simple_executor";
+//! #     const MAX_ATTEMPTS: u16 = 2;
+//! #     async fn execute(_job: Job<Self::Data, Self::Metadata>) -> ExecutionResult {
+//! #         ExecutionResult::Done
+//! #     }
+//! # }
+//! # tokio::runtime::Runtime::new().unwrap().block_on(async {
+//! let result = SimpleExecutor::builder()
+//!     .with_max_attempts(2)
+//!     .with_tags(vec!["initial_job", "delayed"])
+//!     .with_data("First job".into())
+//!     .schedule_in(TimeDelta::hours(2))
+//!     .enqueue()
+//!     .await;
+//! # });
+//! ```
 use crate::{
     backend::{Backend, EnqueuableJob},
     executor::Executor,
@@ -9,6 +62,61 @@ use serde::{de::DeserializeOwned, Serialize};
 
 use super::JobId;
 
+/// A builder for enqueuing jobs.
+///
+/// Generally this will not be constructed directly and will instead be constructed via
+/// [`Executor::builder`].
+///
+/// # Overriding [`Executor`] default values
+///
+/// When defining an [`Executor`] you specify the maximum number of attempts via
+/// [`Executor::MAX_ATTEMPTS`]. However, when inserting a job it is possible to override this value
+/// by calling [`JobBuilder::with_max_attempts`] (if not called the max attempts will be equal to
+/// [`Executor::MAX_ATTEMPTS`].
+///
+/// Similarly, the executor can define a job uniqueness criteria via
+/// [`Executor::UNIQUENESS_CRITERIA`]. However, using [`JobBuilder::unique`] it is possible to
+/// override this value for a specific job.
+///
+/// # Global backend
+///
+/// Jobs can either be enqueued onto a specific backend via [`JobBuilder::enqueue_to_backend`] or
+/// enqueued to a globally set backend via [`JobBuilder::enqueue`]. To make use this API and the
+/// global backend, [`crate::Rexecutor::set_global_backend`] should be called. If this hasn't been
+/// called, then a [`RexecuterError::GlobalBackend`] will be returned.
+///
+/// # Example
+///
+/// To enqueue a job to the global backend for an [`Executor`] called `SimpleExecutor` the
+/// following code can be executed:
+///
+/// ```
+/// # use rexecutor::prelude::*;
+/// # use chrono::Utc;
+/// # pub(crate) struct SimpleExecutor;
+/// #
+/// # #[async_trait::async_trait]
+/// # impl Executor for SimpleExecutor {
+/// #     type Data = String;
+/// #     type Metadata = String;
+/// #     const NAME: &'static str = "simple_executor";
+/// #     const MAX_ATTEMPTS: u16 = 2;
+/// #     async fn execute(_job: Job<Self::Data, Self::Metadata>) -> ExecutionResult {
+/// #         ExecutionResult::Done
+/// #     }
+/// # }
+/// # tokio::runtime::Runtime::new().unwrap().block_on(async {
+/// let result = SimpleExecutor::builder()
+///     .with_max_attempts(2)
+///     .with_priority(2)
+///     .add_tag("initial_job")
+///     .with_data("First job".into())
+///     .with_metadata("550e8400-e29b-41d4-a716-446655440000".into())
+///     .schedule_at(Utc::now())
+///     .enqueue()
+///     .await;
+/// # });
+/// ```
 // TODO add api to add as a cron job
 pub struct JobBuilder<'a, E>
 where
@@ -50,6 +158,9 @@ where
     E::Data: Serialize + DeserializeOwned,
     E::Metadata: Serialize + DeserializeOwned,
 {
+    /// Adds the job's data.
+    ///
+    /// For jobs with data this will need to be called for every job inserted.
     pub fn with_data(self, data: E::Data) -> Self {
         Self {
             data: Some(data),
@@ -57,6 +168,9 @@ where
         }
     }
 
+    /// Adds metadata to the job.
+    ///
+    /// For jobs with metadata this will need to be called for every job inserted.
     pub fn with_metadata(self, metadata: E::Metadata) -> Self {
         Self {
             metadata: Some(metadata),
@@ -64,6 +178,9 @@ where
         }
     }
 
+    /// Sets the max attempts.
+    ///
+    /// If this is not called, `max_attempts` is set to [`Executor::MAX_ATTEMPTS`].
     pub fn with_max_attempts(self, max_attempts: u16) -> Self {
         Self {
             max_attempts: Some(max_attempts),
@@ -71,29 +188,50 @@ where
         }
     }
 
+    /// Sets when the jobs should be scheduled for.
+    ///
+    /// If not called the job is enqueue to run immediately, i.e. scheduled_at is set to
+    /// [`Utc::now()`].
     pub fn schedule_at(self, schedule_at: DateTime<Utc>) -> Self {
         Self {
             scheduled_at: schedule_at,
             ..self
         }
     }
+
+    /// Sets when the jobs should be scheduled by specifying the duration between now and the
+    /// intended schedule time.
+    ///
+    /// If not called the job is enqueue to run immediately, i.e. scheduled_at is set to
+    /// [`Utc::now()`].
     pub fn schedule_in(self, schedule_in: Duration) -> Self {
         Self {
             scheduled_at: Utc::now() + schedule_in,
             ..self
         }
     }
+
+    /// Adds a single tag to the job.
     pub fn add_tag(self, tag: impl Into<String>) -> Self {
         let mut tags = self.tags;
         tags.push(tag.into());
         Self { tags, ..self }
     }
 
+    /// Specify the complete list of tags to set on the job.
+    ///
+    /// Unlike [`JobBuilder::add_tag`], this function will override and previously specified tags.
     pub fn with_tags(self, tags: Vec<impl Into<String>>) -> Self {
         let tags = tags.into_iter().map(Into::into).collect();
         Self { tags, ..self }
     }
 
+    /// Specify the [`UniquenessCriteria`] for inserting this job.
+    ///
+    /// [`UniquenessCriteria`] can be used to ensure the no duplicate jobs are inserted.
+    ///
+    /// If this is not specified here, the uniqueness criteria is set to
+    /// [`Executor::UNIQUENESS_CRITERIA`].
     pub fn unique(self, criteria: UniquenessCriteria<'a>) -> Self {
         Self {
             uniqueness_criteria: Some(criteria),
@@ -101,10 +239,26 @@ where
         }
     }
 
+    /// Specify the job priority.
+    ///
+    /// Job priorities can be used to ensure certain jobs run before others when scheduled at the
+    /// same time.
+    ///
+    /// Job priorities are handled on a per [`Executor`] basis.
+    ///
+    /// The lower the number the higher the priority, i.e. a priority of `0` is the maximum
+    /// priority.
+    ///
+    /// If not specified, defaults to `0` (maximum priority).
     pub fn with_priority(self, priority: u16) -> Self {
         Self { priority, ..self }
     }
 
+    /// Enqueue this job to the global backend.
+    ///
+    /// To make use this API and the global backend, [`crate::Rexecutor::set_global_backend`]
+    /// should be called. If this hasn't been called, then a [`RexecuterError::GlobalBackend`]
+    /// will be returned.
     pub async fn enqueue(self) -> Result<JobId, RexecuterError>
     where
         E::Data: 'static + Send,
@@ -114,6 +268,7 @@ where
         self.enqueue_to_backend(backend.as_ref()).await
     }
 
+    /// Enqueue this job to the provided backend.
     pub async fn enqueue_to_backend<B: Backend + ?Sized>(
         self,
         backend: &B,

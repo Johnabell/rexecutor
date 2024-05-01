@@ -16,7 +16,8 @@
 //! - [`Where::scheduled_at_after`]
 //! - [`Where::scheduled_at_equals`]
 //!
-//! These can then be combine together using the [`Where::and`], [`Where::or`], and [`Where::not`].
+//! These can then be combine together using the [`Where::and`], [`Where::or`], and through the
+//! [`std::ops::Not`] implementation.
 //!
 //! # Examples
 //!
@@ -25,7 +26,6 @@
 //! ```
 //! # use rexecutor::prelude::*;
 //! # let job_id = 1.into();
-//!
 //! let query = Where::<'_, (), ()>::id_equals(job_id);
 //! ```
 //!
@@ -34,7 +34,6 @@
 //! ```
 //! # use rexecutor::prelude::*;
 //! # use chrono::Utc;
-//!
 //! let query = Where::<'_, (), ()>::scheduled_at_equals(Utc::now());
 //! ```
 //!
@@ -43,7 +42,6 @@
 //! ```
 //! # use rexecutor::prelude::*;
 //! # use chrono::TimeDelta;
-//!
 //! let query = Where::<'_, (), ()>::tagged_by_all_of(&["customer_comms", "mandatory"])
 //!     .and(!Where::tagged_by_one_of(&["thank_you_comms"]))
 //!     .and(Where::scheduled_at_within_the_last(TimeDelta::days(20)))
@@ -76,7 +74,8 @@ use chrono::{DateTime, Utc};
 /// - [`Where::scheduled_at_after`]
 /// - [`Where::scheduled_at_equals`]
 ///
-/// These can then be combine together using the [`Where::and`], [`Where::or`], and [`Where::not`].
+/// These can then be combine together using the [`Where::and`], [`Where::or`], and through the
+/// [`std::ops::Not`] implementation.
 ///
 /// # Examples
 ///
@@ -85,7 +84,6 @@ use chrono::{DateTime, Utc};
 /// ```
 /// # use rexecutor::prelude::*;
 /// # let job_id = 1.into();
-///
 /// let query = Where::<'_, (), ()>::id_equals(job_id);
 /// ```
 ///
@@ -94,7 +92,6 @@ use chrono::{DateTime, Utc};
 /// ```
 /// # use rexecutor::prelude::*;
 /// # use chrono::Utc;
-///
 /// let query = Where::<'_, (), ()>::scheduled_at_equals(Utc::now());
 /// ```
 ///
@@ -104,7 +101,6 @@ use chrono::{DateTime, Utc};
 /// # use rexecutor::prelude::*;
 /// # use chrono::{TimeDelta, Utc};
 /// # let job_ids = [1.into(), 2.into()];
-///
 /// let query = Where::<'_, (), ()>::id_in(&job_ids)
 ///     .and(Where::tagged_by_all_of(&["customer_comms", "mandatory"]))
 ///     .and(!Where::tagged_by_one_of(&["thank_you_comms"]))
@@ -190,7 +186,6 @@ impl<'a, D, M> Where<'a, D, M> {
     /// ```
     /// # use rexecutor::prelude::*;
     /// # use chrono::TimeDelta;
-    ///
     /// let query = Where::data_equals(&"Data")
     ///     .and(Where::metadata_equals(&42))
     ///     .and(Where::scheduled_at_within_the_last(TimeDelta::days(3)));
@@ -210,7 +205,6 @@ impl<'a, D, M> Where<'a, D, M> {
     ///
     /// ```
     /// # use rexecutor::prelude::*;
-    ///
     /// let query = Where::<'_, (), ()>::status_equals(JobStatus::Scheduled)
     ///     .or(Where::status_equals(JobStatus::Retryable))
     ///     .or(Where::status_equals(JobStatus::Discarded));
