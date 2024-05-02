@@ -147,7 +147,7 @@ pub struct EnqueuableJob<'a> {
     pub uniqueness_criteria: Option<UniquenessCriteria<'a>>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Eq, PartialEq)]
 pub struct Job {
     pub id: i32,
     pub status: JobStatus,
@@ -305,6 +305,27 @@ pub(crate) mod test {
                 discarded_at: None,
             }
         }
+        pub(crate) fn raw_job() -> Self {
+            let now = Utc::now();
+            Self {
+                id: 0,
+                executor: "executor".to_owned(),
+                status: JobStatus::Scheduled,
+                data: serde_json::Value::Null,
+                metadata: serde_json::Value::Null,
+                attempt: 0,
+                max_attempts: 3,
+                priority: 0,
+                tags: vec![],
+                errors: vec![],
+                inserted_at: now,
+                scheduled_at: now + TimeDelta::hours(2),
+                attempted_at: None,
+                completed_at: None,
+                cancelled_at: None,
+                discarded_at: None,
+            }
+        }
     }
 
     impl Job {
@@ -316,6 +337,14 @@ pub(crate) mod test {
                 data: serde_json::to_value(data).unwrap(),
                 ..self
             }
+        }
+
+        pub(crate) fn with_raw_metadata(self, metadata: serde_json::Value) -> Self {
+            Self { metadata, ..self }
+        }
+
+        pub(crate) fn with_raw_data(self, data: serde_json::Value) -> Self {
+            Self { data, ..self }
         }
 
         pub(crate) fn with_max_attempts(self, max_attempts: i32) -> Self {

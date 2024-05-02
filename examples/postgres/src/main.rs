@@ -203,7 +203,7 @@ impl Executor for CancelledJob {
     const MAX_ATTEMPTS: u16 = 1;
     async fn execute(job: Job<Self::Data, Self::Metadata>) -> ExecutionResult {
         println!("{} running, with args: {:?}", Self::NAME, job.data);
-        ExecutionResult::Cancelled {
+        ExecutionResult::Cancel {
             reason: Box::new("Didn't like the job"),
         }
     }

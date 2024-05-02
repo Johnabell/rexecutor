@@ -169,8 +169,6 @@ where
     }
 
     /// Adds metadata to the job.
-    ///
-    /// For jobs with metadata this will need to be called for every job inserted.
     pub fn with_metadata(self, metadata: E::Metadata) -> Self {
         Self {
             metadata: Some(metadata),

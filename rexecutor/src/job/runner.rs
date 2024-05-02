@@ -104,7 +104,7 @@ where
 
         match result.await {
             Ok(Ok(ExecutionResult::Done)) => self.handle_job_complete(job_id).await,
-            Ok(Ok(ExecutionResult::Cancelled { reason })) => {
+            Ok(Ok(ExecutionResult::Cancel { reason })) => {
                 self.handle_job_cancelled(job_id, reason).await
             }
             Ok(Ok(ExecutionResult::Snooze { delay })) => {
@@ -145,7 +145,7 @@ where
 
         match result.await {
             Ok(ExecutionResult::Done) => self.handle_job_complete(job_id).await,
-            Ok(ExecutionResult::Cancelled { reason }) => {
+            Ok(ExecutionResult::Cancel { reason }) => {
                 self.handle_job_cancelled(job_id, reason).await
             }
             Ok(ExecutionResult::Snooze { delay }) => self.handle_job_snoozed(job_id, delay).await,

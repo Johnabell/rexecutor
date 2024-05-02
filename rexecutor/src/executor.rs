@@ -203,7 +203,7 @@ impl std::ops::Deref for ExecutorIdentifier {
 
 pub enum ExecutionResult {
     Done,
-    Cancelled { reason: Box<dyn CancellationReason> },
+    Cancel { reason: Box<dyn CancellationReason> },
     Snooze { delay: TimeDelta },
     Error { error: Box<dyn ExecutionError> },
 }
@@ -287,7 +287,7 @@ pub(crate) mod test {
                     ExecutionResult::Done
                 }
                 MockExecutionResult::Done => ExecutionResult::Done,
-                MockExecutionResult::Cancelled { reason } => ExecutionResult::Cancelled {
+                MockExecutionResult::Cancelled { reason } => ExecutionResult::Cancel {
                     reason: Box::new(reason),
                 },
                 MockExecutionResult::Snooze { delay } => ExecutionResult::Snooze {
