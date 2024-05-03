@@ -12,7 +12,7 @@ use backend::{Backend, BackendError};
 use cron_runner::CronRunner;
 use executor::Executor;
 use job::runner::JobRunner;
-use pruner::{PrunerConfig, PrunerRunner};
+use pruner::{runner::PrunerRunner, PrunerConfig};
 use serde::{de::DeserializeOwned, Serialize};
 use thiserror::Error;
 use tokio::sync::OnceCell;
@@ -20,7 +20,9 @@ use tokio_util::sync::CancellationToken;
 
 trait InternalRexecutorState {}
 
+#[doc(hidden)]
 pub struct GlobalSet;
+#[doc(hidden)]
 pub struct GlobalUnset;
 impl InternalRexecutorState for GlobalUnset {}
 impl InternalRexecutorState for GlobalSet {}

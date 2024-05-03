@@ -42,7 +42,7 @@ impl Display for JobId {
 /// job should be ran.
 #[derive(Debug, Eq, PartialEq, Clone)]
 // #[non_exhaustive]
-pub struct Job<E, M> {
+pub struct Job<D, M> {
     /// The id of the job.
     pub id: JobId,
     /// The current status of the job.
@@ -52,7 +52,7 @@ pub struct Job<E, M> {
     /// Determined via [`crate::executor::Executor::NAME`].
     pub executor: String,
     /// The data for running this job.
-    pub data: E,
+    pub data: D,
     /// Any metadata associated with this job.
     pub metadata: Option<M>,
     /// The current attempt of the job.
@@ -87,9 +87,9 @@ pub struct Job<E, M> {
     pub discarded_at: Option<DateTime<Utc>>,
 }
 
-impl<E, M> TryFrom<backend::Job> for Job<E, M>
+impl<D, M> TryFrom<backend::Job> for Job<D, M>
 where
-    E: DeserializeOwned,
+    D: DeserializeOwned,
     M: DeserializeOwned,
 {
     type Error = serde_json::Error;
@@ -118,7 +118,7 @@ where
     }
 }
 
-impl<E, M> Job<E, M> {
+impl<D, M> Job<D, M> {
     pub(crate) fn is_final_attempt(&self) -> bool {
         self.attempt == self.max_attempts
     }

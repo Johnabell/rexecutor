@@ -293,7 +293,13 @@ where
 
 #[cfg(test)]
 mod tests {
-    use crate::{backend::MockBackend, executor::test::SimpleExecutor};
+    use std::sync::Arc;
+
+    use crate::{
+        backend::{BackendError, MockBackend},
+        executor::test::SimpleExecutor,
+        Rexecutor,
+    };
 
     use super::*;
 
@@ -312,6 +318,50 @@ mod tests {
             .with_data("First job".into())
             .schedule_in(Duration::hours(2))
             .enqueue_to_backend(&backend)
+            .await
+            .unwrap();
+
+        assert_eq!(job_id, expected_job_id);
+    }
+
+    #[tokio::test]
+    async fn enqueue_error() {
+        let mut backend = MockBackend::default();
+        backend
+            .expect_enqueue()
+            .returning(move |_| Err(BackendError::BadStateError));
+
+        SimpleExecutor::builder()
+            .with_max_attempts(2)
+            .with_tags(vec!["initial_job"])
+            .with_data("First job".into())
+            .schedule_in(Duration::hours(2))
+            .enqueue_to_backend(&backend)
+            .await
+            .expect_err("Should error");
+    }
+
+    #[tokio::test]
+    async fn enqueue_to_global() {
+        // This might need updating, since the global backend truely is global. Might be nice to
+        // have a testing strategy for people using the global backend.
+        let expected_job_id = JobId(0);
+
+        let mut backend = MockBackend::default();
+        backend
+            .expect_enqueue()
+            .returning(move |_| Ok(expected_job_id));
+
+        Rexecutor::new(Arc::new(backend))
+            .set_global_backend()
+            .unwrap();
+
+        let job_id = SimpleExecutor::builder()
+            .with_max_attempts(2)
+            .with_tags(vec!["initial_job"])
+            .with_data("First job".into())
+            .schedule_in(Duration::hours(2))
+            .enqueue()
             .await
             .unwrap();
 
