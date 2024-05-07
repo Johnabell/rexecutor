@@ -41,7 +41,7 @@
 //! #         ExecutionResult::Done
 //! #     }
 //! # }
-//! # tokio::runtime::Runtime::new().unwrap().block_on(async {
+//! # tokio::runtime::Builder::new_current_thread().build().unwrap().block_on(async {
 //! let result = SimpleExecutor::builder()
 //!     .with_max_attempts(2)
 //!     .with_tags(vec!["initial_job", "delayed"])
@@ -58,7 +58,6 @@ use crate::{
     RexecuterError, GLOBAL_BACKEND,
 };
 use chrono::{DateTime, Duration, Utc};
-use serde::{de::DeserializeOwned, Serialize};
 
 use super::JobId;
 
@@ -105,7 +104,7 @@ use super::JobId;
 /// #         ExecutionResult::Done
 /// #     }
 /// # }
-/// # tokio::runtime::Runtime::new().unwrap().block_on(async {
+/// # tokio::runtime::Builder::new_current_thread().build().unwrap().block_on(async {
 /// let result = SimpleExecutor::builder()
 ///     .with_max_attempts(2)
 ///     .with_priority(2)
@@ -121,8 +120,6 @@ use super::JobId;
 pub struct JobBuilder<'a, E>
 where
     E: Executor + 'static,
-    E::Data: Serialize + DeserializeOwned,
-    E::Metadata: Serialize + DeserializeOwned,
 {
     data: Option<E::Data>,
     metadata: Option<E::Metadata>,
@@ -136,8 +133,6 @@ where
 impl<'a, E> Default for JobBuilder<'a, E>
 where
     E: Executor,
-    E::Data: Serialize + DeserializeOwned,
-    E::Metadata: Serialize + DeserializeOwned,
 {
     fn default() -> Self {
         Self {
@@ -155,8 +150,6 @@ where
 impl<'a, E> JobBuilder<'a, E>
 where
     E: Executor,
-    E::Data: Serialize + DeserializeOwned,
-    E::Metadata: Serialize + DeserializeOwned,
 {
     /// Adds the job's data.
     ///

@@ -1,3 +1,4 @@
+//! Definition of the main trait [`Executor`] for defining enqueuable executions units (jobs).
 use async_trait::async_trait;
 use chrono::TimeDelta;
 use serde::{de::DeserializeOwned, Serialize};
@@ -26,12 +27,12 @@ pub trait Executor {
     /// The type representing the executors arguments/data.
     ///
     /// If this is not needed it can be set to unit `()`.
-    type Data;
+    type Data: Serialize + DeserializeOwned;
 
-    /// The type for storing the executors metadata.
+    /// The type for storing the executors metadata this is always optional.
     ///
     /// If this is not needed it can be set to unit `()`.
-    type Metadata;
+    type Metadata: Serialize + DeserializeOwned;
 
     /// The name of the executor.
     ///
@@ -58,7 +59,7 @@ pub trait Executor {
     /// This is to prevent a computationally expensive job locking up the asynchronous runtime.
     ///
     /// Under the covers this results in the job executor being ran via
-    /// [`tokio::task::spawn_blocking`]. See it's docs for more details about blocking futures.
+    /// [`tokio::task::spawn_blocking`]. See the docs for more details about blocking futures.
     const BLOCKING: bool = false;
 
     /// This can be used to ensure that only unique jobs matching the [`UniquenessCriteria`] are
@@ -71,16 +72,31 @@ pub trait Executor {
     /// It is possible to override when inserting a specific job via [`JobBuilder::unique`].
     const UNIQUENESS_CRITERIA: Option<UniquenessCriteria<'static>> = None;
 
+    /// The work this a job should do when executing.
     async fn execute(job: Job<Self::Data, Self::Metadata>) -> ExecutionResult;
 
+    /// Defines the backoff after a failed job.
+    ///
+    /// The default backoff strategy is
+    ///  - exponential backoff with initial backoff of 4 seconds, and
+    ///  - a max backoff of seven days,
+    ///  - with a 10% jitter margin.
+    ///
+    ///  For some standard backoff strategies see the [`crate::backoff`].
     fn backoff(job: &Job<Self::Data, Self::Metadata>) -> TimeDelta {
         DEFAULT_BACKOFF_STRATEGY.backoff(job.attempt)
     }
 
+    /// The timeout when executing a specific job.
+    ///
+    /// If this returns [`None`] (default behaviour) then the job will be ran without a timeout.
     fn timeout(_job: &Job<Self::Data, Self::Metadata>) -> Option<std::time::Duration> {
         None
     }
 
+    /// The builder for inserting jobs.
+    ///
+    /// For details of the API see [`JobBuilder`].
     fn builder<'a>() -> JobBuilder<'a, Self>
     where
         Self: Sized,
@@ -91,6 +107,36 @@ pub trait Executor {
     }
 
     // Should the job manipulation API always return the job?
+
+    /// Cancel a job with the given reason.
+    ///
+    /// To make use this API and the global backend, [`crate::Rexecutor::set_global_backend`]
+    /// should be called. If this hasn't been called, then a [`RexecuterError::GlobalBackend`]
+    /// will be returned.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// # use rexecutor::prelude::*;
+    /// # let job_id = 0.into();
+    /// # use chrono::TimeDelta;
+    /// # pub(crate) struct SimpleExecutor;
+    /// #
+    /// # #[async_trait::async_trait]
+    /// # impl Executor for SimpleExecutor {
+    /// #     type Data = String;
+    /// #     type Metadata = String;
+    /// #     const NAME: &'static str = "simple_executor";
+    /// #     const MAX_ATTEMPTS: u16 = 2;
+    /// #     async fn execute(_job: Job<Self::Data, Self::Metadata>) -> ExecutionResult {
+    /// #         ExecutionResult::Done
+    /// #     }
+    /// # }
+    /// # tokio::runtime::Builder::new_current_thread().build().unwrap().block_on(async {
+    /// let reason = Box::new("No longer needed");
+    /// let result = SimpleExecutor::cancel_job(job_id, reason).await;
+    /// # });
+    /// ```
     async fn cancel_job(
         job_id: JobId,
         cancellation_reason: Box<dyn CancellationReason>,
@@ -99,6 +145,7 @@ pub trait Executor {
         Self::cancel_job_on_backend(job_id, cancellation_reason, backend.as_ref()).await
     }
 
+    /// Cancel a job with the given reason on the provided backend.
     async fn cancel_job_on_backend<B>(
         job_id: JobId,
         cancellation_reason: Box<dyn CancellationReason>,
@@ -113,11 +160,40 @@ pub trait Executor {
         Ok(())
     }
 
+    /// Rerun a completed or discarded job.
+    ///
+    /// To make use this API and the global backend, [`crate::Rexecutor::set_global_backend`]
+    /// should be called. If this hasn't been called, then a [`RexecuterError::GlobalBackend`]
+    /// will be returned.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// # use rexecutor::prelude::*;
+    /// # let job_id = 0.into();
+    /// # use chrono::TimeDelta;
+    /// # pub(crate) struct SimpleExecutor;
+    /// #
+    /// # #[async_trait::async_trait]
+    /// # impl Executor for SimpleExecutor {
+    /// #     type Data = String;
+    /// #     type Metadata = String;
+    /// #     const NAME: &'static str = "simple_executor";
+    /// #     const MAX_ATTEMPTS: u16 = 2;
+    /// #     async fn execute(_job: Job<Self::Data, Self::Metadata>) -> ExecutionResult {
+    /// #         ExecutionResult::Done
+    /// #     }
+    /// # }
+    /// # tokio::runtime::Builder::new_current_thread().build().unwrap().block_on(async {
+    /// let result = SimpleExecutor::rerun_job(job_id).await;
+    /// # });
+    /// ```
     async fn rerun_job(job_id: JobId) -> Result<()> {
         let backend = GLOBAL_BACKEND.get().ok_or(RexecuterError::GlobalBackend)?;
         Self::rerun_job_on_backend(job_id, backend.as_ref()).await
     }
 
+    /// Rerun a completed or discarded job on the provided backend.
     async fn rerun_job_on_backend<B>(job_id: JobId, backend: &B) -> Result<()>
     where
         B: Backend + ?Sized + Sync,
@@ -126,6 +202,37 @@ pub trait Executor {
         Ok(())
     }
 
+    /// Query the jobs for this executor using the provided query.
+    ///
+    /// For details of the query API see [`Where`].
+    ///
+    /// To make use this API and the global backend, [`crate::Rexecutor::set_global_backend`]
+    /// should be called. If this hasn't been called, then a [`RexecuterError::GlobalBackend`]
+    /// will be returned.
+    ///
+    /// # Example
+    ///
+    /// To query all completed jobs for the `SimpleExecutor`:
+    ///
+    /// ```
+    /// # use rexecutor::prelude::*;
+    /// # use chrono::TimeDelta;
+    /// # pub(crate) struct SimpleExecutor;
+    /// #
+    /// # #[async_trait::async_trait]
+    /// # impl Executor for SimpleExecutor {
+    /// #     type Data = String;
+    /// #     type Metadata = String;
+    /// #     const NAME: &'static str = "simple_executor";
+    /// #     const MAX_ATTEMPTS: u16 = 2;
+    /// #     async fn execute(_job: Job<Self::Data, Self::Metadata>) -> ExecutionResult {
+    /// #         ExecutionResult::Done
+    /// #     }
+    /// # }
+    /// # tokio::runtime::Builder::new_current_thread().build().unwrap().block_on(async {
+    /// let result = SimpleExecutor::query_jobs(Where::status_equals(JobStatus::Complete)).await;
+    /// # });
+    /// ```
     async fn query_jobs<'a>(
         query: Where<'a, Self::Data, Self::Metadata>,
     ) -> Result<Vec<Job<Self::Data, Self::Metadata>>>
@@ -137,6 +244,9 @@ pub trait Executor {
         Self::query_jobs_on_backend(query, backend.as_ref()).await
     }
 
+    /// Query the jobs for this executor using the provided query on the provided backend.
+    ///
+    /// For details of the query API see [`Where`].
     async fn query_jobs_on_backend<'a, B>(
         query: Where<'a, Self::Data, Self::Metadata>,
         backend: &B,
@@ -154,6 +264,34 @@ pub trait Executor {
             .collect::<std::result::Result<Vec<_>, _>>()?)
     }
 
+    /// Update the given job
+    ///
+    /// To make use this API and the global backend, [`crate::Rexecutor::set_global_backend`]
+    /// should be called. If this hasn't been called, then a [`RexecuterError::GlobalBackend`]
+    /// will be returned.
+    ///
+    /// # Example
+    ///
+    /// To query all completed jobs for the `SimpleExecutor`:
+    ///
+    /// ```
+    /// # use rexecutor::prelude::*;
+    /// # use chrono::TimeDelta;
+    /// # pub(crate) struct SimpleExecutor;
+    /// #
+    /// # #[async_trait::async_trait]
+    /// # impl Executor for SimpleExecutor {
+    /// #     type Data = String;
+    /// #     type Metadata = String;
+    /// #     const NAME: &'static str = "simple_executor";
+    /// #     const MAX_ATTEMPTS: u16 = 2;
+    /// #     async fn execute(mut job: Job<Self::Data, Self::Metadata>) -> ExecutionResult {
+    /// job.max_attempts = 5;
+    /// let result = SimpleExecutor::update_job(job).await;
+    /// #         ExecutionResult::Done
+    /// #     }
+    /// # }
+    /// ```
     async fn update_job(job: Job<Self::Data, Self::Metadata>) -> Result<()>
     where
         Self::Data: 'static + Send + Serialize + Sync,
@@ -163,6 +301,7 @@ pub trait Executor {
         Self::update_job_on_backend(job, backend.as_ref()).await
     }
 
+    /// Update the given job
     async fn update_job_on_backend<B>(
         job: Job<Self::Data, Self::Metadata>,
         backend: &B,
@@ -178,6 +317,7 @@ pub trait Executor {
     }
 }
 
+/// An identifier for an executor.
 #[derive(Debug, Eq, PartialEq, Clone, Hash)]
 pub struct ExecutorIdentifier(&'static str);
 
@@ -188,6 +328,7 @@ impl From<&'static str> for ExecutorIdentifier {
 }
 
 impl ExecutorIdentifier {
+    /// Returns a view of this [`ExecutorIdentifier`] as a string slice.
     pub fn as_str(&self) -> &'static str {
         self.0
     }
@@ -201,11 +342,47 @@ impl std::ops::Deref for ExecutorIdentifier {
     }
 }
 
+/// The return value of a job execution.
+///
+/// The value returns determines what will happen to the completed job.
+///
+/// If the jobs completes successfully [`ExecutionResult::Done`] should be returned. This will
+/// result in the job status being set to [`crate::job::JobStatus::Complete`].
+///
+/// If the job resulted in a error, then [`ExecutionResult::Error`] can be returned. This will set
+/// the job status equal to [`crate::job::JobStatus::Retryable`] if the job's `attempt` value is
+/// less than its `max_attempts` value. The retry will be scheduled after the `TimeDelta` returned
+/// from the [`Executor::backoff`].
+///
+/// If the job should be attempted later then it is possible to snooze the job by returning
+/// [`ExecutionResult::Snooze`] providing the delay to wait until trying the job again. Unlike
+/// returning an error this does not increment the job's attempt field.
+///
+/// If the job should not attempt to be retried and did not complete successfully then
+/// [`ExecutionResult::Cancel`] can be returned passing in the cancellation reason.
 pub enum ExecutionResult {
+    /// The job completed successfully and should be marked as completed.
     Done,
-    Cancel { reason: Box<dyn CancellationReason> },
-    Snooze { delay: TimeDelta },
-    Error { error: Box<dyn ExecutionError> },
+    /// The job did not complete successfully and should not be retried.
+    Cancel {
+        /// The reason the job should be cancelled. This will be stored in the `error` field on the
+        /// job.
+        reason: Box<dyn CancellationReason>,
+    },
+    /// The job should be retried after the `delay`.
+    ///
+    /// Note unlike returning an error returning `Snooze` will not increment the job's attempt
+    /// number.
+    Snooze {
+        /// The delay to wait until attempting this job again.
+        delay: TimeDelta,
+    },
+    /// The job's execution resulted in an error and the job should either be retired if
+    /// `job.attempt < job.max_attempts` or be discarded if `job.attempt == job.max_attempts`.
+    Error {
+        /// The error that occurred when attempting to execute this job.
+        error: Box<dyn ExecutionError>,
+    },
 }
 
 impl<T> From<T> for ExecutionResult
@@ -219,10 +396,16 @@ where
     }
 }
 
+/// Errors returned from jobs as part of [`ExecutionResult::Error`] should implement this trait.
+/// The error type can be later used for identifying particular failures in the job's errors array.
 pub trait ExecutionError: Error + Send {
+    /// An identifier for the type of error that occurred while execution the job.
     fn error_type(&self) -> &'static str;
 }
 
+/// Anything that can be used as a cancellation recons. Generally this should not need to be
+/// implemented and instead users of the library should be able to rely on the blanket
+/// implementations.
 pub trait CancellationReason: Display + Send {}
 
 impl<T> CancellationReason for T where T: Display + Send {}
@@ -231,6 +414,11 @@ impl<T> CancellationReason for T where T: Display + Send {}
 pub(crate) mod test {
     use async_trait::async_trait;
     use serde::{Deserialize, Serialize};
+
+    use crate::{
+        backend::{BackendError, MockBackend},
+        job::JobStatus,
+    };
 
     use super::*;
 
@@ -306,5 +494,137 @@ pub(crate) mod test {
                 None
             }
         }
+    }
+
+    #[tokio::test]
+    async fn cancel_job_error() {
+        let job_id = 0.into();
+        let mut backend = MockBackend::default();
+        backend
+            .expect_mark_job_cancelled()
+            .returning(move |_, _| Err(BackendError::BadStateError));
+
+        let reason = Box::new("No longer needed");
+        let result = SimpleExecutor::cancel_job_on_backend(job_id, reason, &backend).await;
+
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn cancel_job_success() {
+        let job_id = 0.into();
+        let mut backend = MockBackend::default();
+        backend
+            .expect_mark_job_cancelled()
+            .returning(move |_, _| Ok(()));
+
+        let reason = Box::new("No longer needed");
+        let result = SimpleExecutor::cancel_job_on_backend(job_id, reason, &backend).await;
+
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn rerun_job_error() {
+        let job_id = 0.into();
+        let mut backend = MockBackend::default();
+        backend
+            .expect_rerun_job()
+            .returning(move |_| Err(BackendError::BadStateError));
+
+        let result = SimpleExecutor::rerun_job_on_backend(job_id, &backend).await;
+
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn rerun_job_success() {
+        let job_id = 0.into();
+        let mut backend = MockBackend::default();
+        backend.expect_rerun_job().returning(move |_| Ok(()));
+
+        let result = SimpleExecutor::rerun_job_on_backend(job_id, &backend).await;
+
+        assert!(result.is_ok());
+    }
+
+    #[tokio::test]
+    async fn query_jobs_error() {
+        let mut backend = MockBackend::default();
+        backend
+            .expect_query()
+            .returning(move |_| Err(BackendError::BadStateError));
+        let query = Where::status_equals(JobStatus::Cancelled);
+
+        let result = SimpleExecutor::query_jobs_on_backend(query, &backend).await;
+
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn query_jobs_success_empty() {
+        let mut backend = MockBackend::default();
+        backend.expect_query().returning(move |_| Ok(vec![]));
+        let query = Where::status_equals(JobStatus::Cancelled);
+
+        let result = SimpleExecutor::query_jobs_on_backend(query, &backend).await;
+
+        assert!(result.is_ok());
+        assert!(result.unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn query_jobs_success() {
+        let mut backend = MockBackend::default();
+        backend.expect_query().returning(move |_| {
+            Ok(vec![
+                crate::backend::Job::mock_job::<SimpleExecutor>().with_data("Data")
+            ])
+        });
+        let query = Where::status_equals(JobStatus::Cancelled);
+
+        let result = SimpleExecutor::query_jobs_on_backend(query, &backend).await;
+
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap().len(), 1);
+    }
+
+    #[tokio::test]
+    async fn update_job_error() {
+        let job = crate::backend::Job::mock_job::<SimpleExecutor>()
+            .with_data("Data")
+            .try_into()
+            .unwrap();
+        let mut backend = MockBackend::default();
+        backend
+            .expect_update_job()
+            .returning(move |_| Err(BackendError::BadStateError));
+
+        let result = SimpleExecutor::update_job_on_backend(job, &backend).await;
+
+        assert!(result.is_err());
+    }
+
+    #[tokio::test]
+    async fn update_job_success() {
+        let job = crate::backend::Job::mock_job::<SimpleExecutor>()
+            .with_data("Data")
+            .try_into()
+            .unwrap();
+        let mut backend = MockBackend::default();
+        backend.expect_update_job().returning(move |_| Ok(()));
+
+        let result = SimpleExecutor::update_job_on_backend(job, &backend).await;
+
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn default_timeout_is_none() {
+        let job = crate::backend::Job::mock_job::<SimpleExecutor>()
+            .with_data("Data")
+            .try_into()
+            .unwrap();
+        assert!(SimpleExecutor::timeout(&job).is_none());
     }
 }
