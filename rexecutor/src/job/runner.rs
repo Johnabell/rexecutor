@@ -43,7 +43,7 @@ where
         tokio::spawn({
             async move {
                 self.backend
-                    .subscribe_new_events(E::NAME.into())
+                    .subscribe_ready_jobs(E::NAME.into())
                     .await
                     .take_until(cancellation_token.cancelled())
                     .for_each_concurrent(E::MAX_CONCURRENCY, {

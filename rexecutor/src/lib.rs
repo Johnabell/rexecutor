@@ -155,7 +155,7 @@ mod tests {
     #[tokio::test]
     async fn run_job_error_in_stream() {
         let mut backend = MockBackend::default();
-        let sender = backend.expect_subscribe_to_new_events_with_stream();
+        let sender = backend.expect_subscribe_to_ready_jobs_with_stream();
         let backend = Arc::new(backend);
 
         let _guard = Rexecutor::<_, _>::new(backend.clone())
@@ -359,7 +359,7 @@ mod tests {
     async fn cron_job() {
         let every_second = cron::Schedule::try_from("* * * * * *").unwrap();
         let mut backend = MockBackend::default();
-        let _sender = backend.expect_subscribe_to_new_events_with_stream();
+        let _sender = backend.expect_subscribe_to_ready_jobs_with_stream();
         backend.expect_enqueue().returning(|_| Ok(0.into()));
         let backend = Arc::new(backend);
 
@@ -375,7 +375,7 @@ mod tests {
     async fn cron_job_error() {
         let every_second = cron::Schedule::try_from("* * * * * *").unwrap();
         let mut backend = MockBackend::default();
-        let _sender = backend.expect_subscribe_to_new_events_with_stream();
+        let _sender = backend.expect_subscribe_to_ready_jobs_with_stream();
         backend
             .expect_enqueue()
             .returning(|_| Err(BackendError::BadStateError));
@@ -428,7 +428,7 @@ mod tests {
     }
 
     async fn run_job(mut backend: MockBackend, job: Job) {
-        let sender = backend.expect_subscribe_to_new_events_with_stream();
+        let sender = backend.expect_subscribe_to_ready_jobs_with_stream();
         let backend = Arc::new(backend);
         let _guard = Rexecutor::new(backend.clone())
             .with_executor::<MockReturnExecutor>()

@@ -13,7 +13,7 @@ const DATABASE_URL: &str = "DATABASE_URL";
 pub async fn main() {
     let db_url = std::env::var(DATABASE_URL).unwrap_or_else(|_| DEFAULT_DATABASE_URL.to_owned());
     tracing_subscriber::fmt()
-        .with_max_level(tracing::Level::TRACE)
+        .with_max_level(tracing::Level::INFO)
         .init();
 
     let pruner_config = PrunerConfig::new("0/2 * * * * *".try_into().unwrap())

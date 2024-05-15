@@ -18,7 +18,7 @@ use crate::{stream::ReadyJobStream, RexecutorPgBackend};
 #[async_trait]
 impl Backend for RexecutorPgBackend {
     #[instrument(skip(self))]
-    async fn subscribe_new_events(
+    async fn subscribe_ready_jobs(
         &self,
         executor_identifier: ExecutorIdentifier,
     ) -> Pin<Box<dyn Stream<Item = Result<Job, BackendError>> + Send>> {

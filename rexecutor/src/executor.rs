@@ -1,4 +1,92 @@
 //! Definition of the main trait [`Executor`] for defining enqueuable executions units (jobs).
+//!
+//! Jobs are defined by creating a struct/enum and implementing `Executor` for it.
+//!
+//! # Example
+//!
+//! You can define and enqueue a job as follows:
+//!
+//! ```
+//! # use rexecutor::prelude::*;
+//! # use chrono::TimeDelta;
+//! struct EmailJob;
+//!
+//! #[async_trait::async_trait]
+//! impl Executor for EmailJob {
+//!     type Data = String;
+//!     type Metadata = String;
+//!     const NAME: &'static str = "email_job";
+//!     const MAX_ATTEMPTS: u16 = 2;
+//!     async fn execute(job: Job<Self::Data, Self::Metadata>) -> ExecutionResult {
+//!         println!("{} running, with args: {}", Self::NAME, job.data);
+//!         /// Do something important with an email
+//!         ExecutionResult::Done
+//!     }
+//! }
+//!
+//! # tokio::runtime::Builder::new_current_thread().build().unwrap().block_on(async {
+//! let _ = EmailJob::builder()
+//!     .with_data("bob.shuruncle@example.com".to_owned())
+//!     .schedule_in(TimeDelta::hours(3))
+//!     .enqueue()
+//!     .await;
+//! # });
+//! ```
+//!
+//! # Unique jobs
+//!
+//! It is possible to ensure uniqueness of jobs based on certain criteria. This can be defined as
+//! part of the implementation of `Executor` via [`Executor::UNIQUENESS_CRITERIA`] or when
+//! inserting the job via [`JobBuilder::unique`].
+//!
+//! For example to ensure that only one unique job is ran every five minutes it is possible to use
+//! the following uniqueness criteria.
+//!
+//! ```
+//! # use rexecutor::prelude::*;
+//! # use chrono::TimeDelta;
+//! struct UniqueJob;
+//!
+//! #[async_trait::async_trait]
+//! impl Executor for UniqueJob {
+//!     type Data = ();
+//!     type Metadata = ();
+//!     const NAME: &'static str = "unique_job";
+//!     const MAX_ATTEMPTS: u16 = 1;
+//!     const UNIQUENESS_CRITERIA: Option<UniquenessCriteria<'static>> = Some(
+//!         UniquenessCriteria::by_executor()
+//!             .and_within(TimeDelta::seconds(300))
+//!             .on_conflict(Replace::priority().for_statuses(&JobStatus::ALL)),
+//!     );
+//!     async fn execute(job: Job<Self::Data, Self::Metadata>) -> ExecutionResult {
+//!         println!("{} running, with args: {:?}", Self::NAME, job.data);
+//!         // Do something important
+//!         ExecutionResult::Done
+//!     }
+//! }
+//!
+//! # tokio::runtime::Builder::new_current_thread().build().unwrap().block_on(async {
+//! // Only one of these jobs will be enqueued
+//! let _ = UniqueJob::builder().enqueue().await;
+//! let _ = UniqueJob::builder().enqueue().await;
+//! # });
+//! ```
+//!
+//! Additionally it is possible to specify what action should be taken when there is a conflicting
+//! job. In the example above the priority is override. For more details of how to use uniqueness
+//! see [`UniquenessCriteria`].
+//!
+//!
+//! # Overriding [`Executor`] default values
+//!
+//! When defining an [`Executor`] you specify the maximum number of attempts via
+//! [`Executor::MAX_ATTEMPTS`]. However, when inserting a job it is possible to override this value
+//! by calling [`JobBuilder::with_max_attempts`] (if not called the max attempts will be equal to
+//! [`Executor::MAX_ATTEMPTS`].
+//!
+//! Similarly, the executor can define a job uniqueness criteria via
+//! [`Executor::UNIQUENESS_CRITERIA`]. However, using [`JobBuilder::unique`] it is possible to
+//! override this value for a specific job.
 use async_trait::async_trait;
 use chrono::TimeDelta;
 use serde::{de::DeserializeOwned, Serialize};
@@ -22,6 +110,94 @@ const DEFAULT_BACKOFF_STRATEGY: BackoffStrategy<Exponential> =
         .with_jitter(Jitter::Relative(0.1));
 
 /// An enqueuable execution unit.
+///
+/// Jobs are defined by creating a struct/enum and implementing `Executor` for it.
+///
+/// # Example
+///
+/// You can define and enqueue a job as follows:
+///
+/// ```
+/// # use rexecutor::prelude::*;
+/// # use chrono::TimeDelta;
+/// struct EmailJob;
+///
+/// #[async_trait::async_trait]
+/// impl Executor for EmailJob {
+///     type Data = String;
+///     type Metadata = String;
+///     const NAME: &'static str = "email_job";
+///     const MAX_ATTEMPTS: u16 = 2;
+///     async fn execute(job: Job<Self::Data, Self::Metadata>) -> ExecutionResult {
+///         println!("{} running, with args: {}", Self::NAME, job.data);
+///         /// Do something important with an email
+///         ExecutionResult::Done
+///     }
+/// }
+///
+/// # tokio::runtime::Builder::new_current_thread().build().unwrap().block_on(async {
+/// let _ = EmailJob::builder()
+///     .with_data("bob.shuruncle@example.com".to_owned())
+///     .schedule_in(TimeDelta::hours(3))
+///     .enqueue()
+///     .await;
+/// # });
+/// ```
+///
+/// # Unique jobs
+///
+/// It is possible to ensure uniqueness of jobs based on certain criteria. This can be defined as
+/// part of the implementation of `Executor` via [`Executor::UNIQUENESS_CRITERIA`] or when
+/// inserting the job via [`JobBuilder::unique`].
+///
+/// For example to ensure that only one unique job is ran every five minutes it is possible to use
+/// the following uniqueness criteria.
+///
+/// ```
+/// # use rexecutor::prelude::*;
+/// # use chrono::TimeDelta;
+/// struct UniqueJob;
+///
+/// #[async_trait::async_trait]
+/// impl Executor for UniqueJob {
+///     type Data = ();
+///     type Metadata = ();
+///     const NAME: &'static str = "unique_job";
+///     const MAX_ATTEMPTS: u16 = 1;
+///     const UNIQUENESS_CRITERIA: Option<UniquenessCriteria<'static>> = Some(
+///         UniquenessCriteria::by_executor()
+///             .and_within(TimeDelta::seconds(300))
+///             .on_conflict(Replace::priority().for_statuses(&JobStatus::ALL)),
+///     );
+///     async fn execute(job: Job<Self::Data, Self::Metadata>) -> ExecutionResult {
+///         println!("{} running, with args: {:?}", Self::NAME, job.data);
+///         // Do something important
+///         ExecutionResult::Done
+///     }
+/// }
+///
+/// # tokio::runtime::Builder::new_current_thread().build().unwrap().block_on(async {
+/// // Only one of these jobs will be enqueued
+/// let _ = UniqueJob::builder().enqueue().await;
+/// let _ = UniqueJob::builder().enqueue().await;
+/// # });
+/// ```
+///
+/// Additionally it is possible to specify what action should be taken when there is a conflicting
+/// job. In the example above the priority is override. For more details of how to use uniqueness
+/// see [`UniquenessCriteria`].
+///
+///
+/// # Overriding [`Executor`] default values
+///
+/// When defining an [`Executor`] you specify the maximum number of attempts via
+/// [`Executor::MAX_ATTEMPTS`]. However, when inserting a job it is possible to override this value
+/// by calling [`JobBuilder::with_max_attempts`] (if not called the max attempts will be equal to
+/// [`Executor::MAX_ATTEMPTS`].
+///
+/// Similarly, the executor can define a job uniqueness criteria via
+/// [`Executor::UNIQUENESS_CRITERIA`]. However, using [`JobBuilder::unique`] it is possible to
+/// override this value for a specific job.
 #[async_trait]
 pub trait Executor {
     /// The type representing the executors arguments/data.
@@ -82,7 +258,9 @@ pub trait Executor {
     ///  - a max backoff of seven days,
     ///  - with a 10% jitter margin.
     ///
-    ///  For some standard backoff strategies see the [`crate::backoff`].
+    /// For some standard backoff strategies see the [`crate::backoff`].
+    ///
+    /// **Note**: this method is called preemptively before attempting execution.
     fn backoff(job: &Job<Self::Data, Self::Metadata>) -> TimeDelta {
         DEFAULT_BACKOFF_STRATEGY.backoff(job.attempt)
     }
