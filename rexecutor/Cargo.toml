@@ -9,6 +9,7 @@ edition = "2021"
 # TODO: set MSRV
 
 [dependencies]
+async-stream = "0.3.5"
 async-trait = "0.1.79"
 chrono = "0.4.37"
 cron = "0.12.1"

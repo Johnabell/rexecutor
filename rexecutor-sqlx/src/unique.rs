@@ -27,7 +27,12 @@ impl<'a> Unique for UniquenessCriteria<'a> {
         if let Some(duration) = self.duration {
             let cutoff = scheduled_at - duration;
             builder.push(" AND scheduled_at >= ").push_bind(cutoff);
+            let cutoff = scheduled_at + duration;
+            builder.push(" AND scheduled_at <= ").push_bind(cutoff);
         }
+        // TODO: orderby closest to today
+        // builder.push(" ORDER BY scheduled_at ")
+        builder.push(" LIMIT 1");
 
         builder
     }

@@ -46,7 +46,7 @@
 //!
 //! assert!(uniqueness_criteria.executor);
 //! assert_eq!(uniqueness_criteria.duration, Some(TimeDelta::seconds(60)));
-//! assert_eq!(uniqueness_criteria.statuses, &[]);
+//! assert_eq!(uniqueness_criteria.statuses, &[JobStatus::Scheduled]);
 //! ```
 use chrono::TimeDelta;
 use std::hash::Hash;
@@ -488,6 +488,8 @@ impl<'a> UniquenessCriteria<'a> {
     /// Constructs a [`UniquenessCriteria`] specifying that a duplicate jobs should only be
     /// detected for jobs for the same [`crate::Executor`].
     ///
+    /// Note: by default this will only match jobs of with status [`JobStatus::Scheduled`].
+    ///
     /// # Example
     ///
     /// ```
@@ -499,7 +501,7 @@ impl<'a> UniquenessCriteria<'a> {
     /// assert!(uniqueness_criteria.executor);
     /// assert!(uniqueness_criteria.key.is_none());
     /// assert!(uniqueness_criteria.duration.is_none());
-    /// assert!(uniqueness_criteria.statuses.is_empty());
+    /// assert_eq!(uniqueness_criteria.statuses, &[JobStatus::Scheduled]);
     /// assert_eq!(uniqueness_criteria.on_conflict, Resolution::DoNothing);
     /// ```
     pub const fn by_executor() -> Self {
@@ -507,13 +509,15 @@ impl<'a> UniquenessCriteria<'a> {
             key: None,
             executor: true,
             duration: None,
-            statuses: &[],
+            statuses: &[JobStatus::Scheduled],
             on_conflict: Resolution::DoNothing,
         }
     }
 
     /// Constructs a [`UniquenessCriteria`] specifying that a duplicate jobs should only be
     /// detected for jobs within the given duration.
+    ///
+    /// Note: by default this will only match jobs of with status [`JobStatus::Scheduled`].
     ///
     /// # Example
     ///
@@ -527,7 +531,7 @@ impl<'a> UniquenessCriteria<'a> {
     /// assert!(!uniqueness_criteria.executor);
     /// assert!(uniqueness_criteria.key.is_none());
     /// assert_eq!(uniqueness_criteria.duration, Some(TimeDelta::seconds(60)));
-    /// assert!(uniqueness_criteria.statuses.is_empty());
+    /// assert_eq!(uniqueness_criteria.statuses, &[JobStatus::Scheduled]);
     /// assert_eq!(uniqueness_criteria.on_conflict, Resolution::DoNothing);
     /// ```
     pub const fn within(duration: TimeDelta) -> Self {
@@ -535,7 +539,7 @@ impl<'a> UniquenessCriteria<'a> {
             key: None,
             executor: false,
             duration: Some(duration),
-            statuses: &[],
+            statuses: &[JobStatus::Scheduled],
             on_conflict: Resolution::DoNothing,
         }
     }
@@ -570,6 +574,8 @@ impl<'a> UniquenessCriteria<'a> {
     /// Constructs a [`UniquenessCriteria`] specifying that a duplicate jobs should only be
     /// detected for jobs with the given uniqueness key.
     ///
+    /// Note: by default this will only match jobs of with status [`JobStatus::Scheduled`].
+    ///
     /// # Example
     ///
     /// ```
@@ -581,7 +587,7 @@ impl<'a> UniquenessCriteria<'a> {
     /// assert!(!uniqueness_criteria.executor);
     /// assert!(uniqueness_criteria.key.is_some());
     /// assert!(uniqueness_criteria.duration.is_none());
-    /// assert!(uniqueness_criteria.statuses.is_empty());
+    /// assert_eq!(uniqueness_criteria.statuses, &[JobStatus::Scheduled]);
     /// assert_eq!(uniqueness_criteria.on_conflict, Resolution::DoNothing);
     /// ```
     pub fn by_key<H: Hash>(value: &H) -> Self {
@@ -590,7 +596,7 @@ impl<'a> UniquenessCriteria<'a> {
             key: Some(key as i64),
             executor: false,
             duration: None,
-            statuses: &[],
+            statuses: &[JobStatus::Scheduled],
             on_conflict: Resolution::DoNothing,
         }
     }
@@ -613,7 +619,7 @@ impl<'a> UniquenessCriteria<'a> {
     /// assert!(uniqueness_criteria.executor);
     /// assert!(uniqueness_criteria.key.is_some());
     /// assert!(uniqueness_criteria.duration.is_none());
-    /// assert!(uniqueness_criteria.statuses.is_empty());
+    /// assert_eq!(uniqueness_criteria.statuses, &[JobStatus::Scheduled]);
     /// assert_eq!(uniqueness_criteria.on_conflict, Resolution::DoNothing);
     /// ```
     pub const fn and_executor(mut self) -> Self {
@@ -640,7 +646,7 @@ impl<'a> UniquenessCriteria<'a> {
     /// assert!(!uniqueness_criteria.executor);
     /// assert!(uniqueness_criteria.key.is_some());
     /// assert_eq!(uniqueness_criteria.duration, Some(TimeDelta::hours(1)));
-    /// assert!(uniqueness_criteria.statuses.is_empty());
+    /// assert_eq!(uniqueness_criteria.statuses, &[JobStatus::Scheduled]);
     /// assert_eq!(uniqueness_criteria.on_conflict, Resolution::DoNothing);
     /// ```
     pub const fn and_within(mut self, duration: TimeDelta) -> Self {
@@ -688,7 +694,7 @@ impl<'a> UniquenessCriteria<'a> {
     /// assert!(uniqueness_criteria.executor);
     /// assert!(uniqueness_criteria.key.is_some());
     /// assert!(uniqueness_criteria.duration.is_none());
-    /// assert!(uniqueness_criteria.statuses.is_empty());
+    /// assert_eq!(uniqueness_criteria.statuses, &[JobStatus::Scheduled]);
     /// assert_eq!(uniqueness_criteria.on_conflict, Resolution::DoNothing);
     /// ```
     pub fn and_key<H: Hash>(mut self, value: &H) -> Self {
@@ -713,7 +719,7 @@ impl<'a> UniquenessCriteria<'a> {
     /// assert!(uniqueness_criteria.executor);
     /// assert!(uniqueness_criteria.key.is_some());
     /// assert!(uniqueness_criteria.duration.is_none());
-    /// assert!(uniqueness_criteria.statuses.is_empty());
+    /// assert_eq!(uniqueness_criteria.statuses, &[JobStatus::Scheduled]);
     /// assert_eq!(
     ///     uniqueness_criteria.on_conflict,
     ///     Resolution::Replace(Replace::data())
@@ -743,7 +749,7 @@ impl<'a> UniquenessCriteria<'a> {
     /// assert!(uniqueness_criteria.executor);
     /// assert!(uniqueness_criteria.key.is_some());
     /// assert!(uniqueness_criteria.duration.is_none());
-    /// assert!(uniqueness_criteria.statuses.is_empty());
+    /// assert_eq!(uniqueness_criteria.statuses, &[JobStatus::Scheduled]);
     /// assert_eq!(uniqueness_criteria.on_conflict, Resolution::DoNothing);
     /// ```
     pub const fn on_conflict_do_nothing(mut self) -> Self {

@@ -44,7 +44,7 @@ impl RexecutorPgBackend {
         let pool = PgPoolOptions::new()
             .connect(db_url)
             .await
-            .map_err(|_| BackendError::BadStateError)?;
+            .map_err(|_| BackendError::BadState)?;
         Self::from_pool(pool).await
     }
     pub async fn from_pool(pool: PgPool) -> Result<Self, BackendError> {
@@ -54,11 +54,11 @@ impl RexecutorPgBackend {
         };
         let mut listener = PgListener::connect_with(&this.pool)
             .await
-            .map_err(|_| BackendError::BadStateError)?;
+            .map_err(|_| BackendError::BadState)?;
         listener
             .listen("public.rexecutor_scheduled")
             .await
-            .map_err(|_| BackendError::BadStateError)?;
+            .map_err(|_| BackendError::BadState)?;
 
         tokio::spawn({
             let subscribers = this.subscribers.clone();
@@ -91,7 +91,7 @@ impl RexecutorPgBackend {
         sqlx::migrate!()
             .run(&self.pool)
             .await
-            .map_err(|_| BackendError::BadStateError)
+            .map_err(|_| BackendError::BadState)
     }
 
     async fn load_job_mark_as_executing_for_executor(

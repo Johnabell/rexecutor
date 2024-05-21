@@ -680,7 +680,7 @@ pub(crate) mod test {
         let mut backend = MockBackend::default();
         backend
             .expect_mark_job_cancelled()
-            .returning(move |_, _| Err(BackendError::BadStateError));
+            .returning(move |_, _| Err(BackendError::BadState));
 
         let reason = Box::new("No longer needed");
         let result = SimpleExecutor::cancel_job_on_backend(job_id, reason, &backend).await;
@@ -708,7 +708,7 @@ pub(crate) mod test {
         let mut backend = MockBackend::default();
         backend
             .expect_rerun_job()
-            .returning(move |_| Err(BackendError::BadStateError));
+            .returning(move |_| Err(BackendError::BadState));
 
         let result = SimpleExecutor::rerun_job_on_backend(job_id, &backend).await;
 
@@ -731,7 +731,7 @@ pub(crate) mod test {
         let mut backend = MockBackend::default();
         backend
             .expect_query()
-            .returning(move |_| Err(BackendError::BadStateError));
+            .returning(move |_| Err(BackendError::BadState));
         let query = Where::status_equals(JobStatus::Cancelled);
 
         let result = SimpleExecutor::query_jobs_on_backend(query, &backend).await;
@@ -776,7 +776,7 @@ pub(crate) mod test {
         let mut backend = MockBackend::default();
         backend
             .expect_update_job()
-            .returning(move |_| Err(BackendError::BadStateError));
+            .returning(move |_| Err(BackendError::BadState));
 
         let result = SimpleExecutor::update_job_on_backend(job, &backend).await;
 

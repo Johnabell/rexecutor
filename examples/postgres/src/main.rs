@@ -28,6 +28,7 @@ pub async fn main() {
 
     let backend = RexecutorPgBackend::from_db_url(&db_url).await.unwrap();
     backend.run_migrations().await.unwrap();
+    // let backend = rexecutor::backend::memory::InMemoryBackend::default();
 
     let _guard = Rexecutor::new(backend)
         .with_executor::<BasicJob>()

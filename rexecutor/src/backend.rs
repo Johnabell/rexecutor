@@ -22,6 +22,9 @@ use crate::{
     pruner::PruneSpec,
 };
 
+pub mod memory;
+pub(crate) mod queryable;
+
 /// The trait which need to be implemented to create a backend for rexecutor.
 ///
 /// Note: the decision was taken to have a subscribe to ready jobs function to enable implementers
@@ -180,7 +183,7 @@ impl MockBackend {
 }
 
 /// A record of an error that was returned from a job.
-#[derive(Debug)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ExecutionError {
     /// The type of error that occurred.
     pub error_type: ErrorType,
@@ -189,7 +192,7 @@ pub struct ExecutionError {
 }
 
 /// The details required to enqueue a job.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct EnqueuableJob<'a> {
     /// The name of the executor which is responsible for running this job.
     ///
@@ -280,7 +283,7 @@ pub enum Query<'a> {
     /// Combines queries with logical `or`.
     Or(Vec<Query<'a>>),
     /// Query based on the name of the executor.
-    ExecutorEqual(&'static str),
+    ExecutorEqual(&'a str),
     /// Query based on equality with the job's encoded data.
     DataEquals(serde_json::Value),
     /// Query based on equality with the job's encoded metadata.
@@ -395,10 +398,12 @@ where
 pub enum BackendError {
     /// A serialization/deserialization type error.
     #[error("Error encoding or decoding data")]
-    EncodeDecodeError(#[from] serde_json::Error),
+    EncodeDecode(#[from] serde_json::Error),
     /// The backend in an inconsistent state.
     #[error("System in bad state")]
-    BadStateError,
+    BadState,
+    #[error("Job not found: {0}")]
+    JobNotFound(JobId),
 }
 
 #[cfg(test)]
@@ -408,8 +413,56 @@ pub(crate) mod test {
     use assert_matches::assert_matches;
     use chrono::TimeDelta;
     use std::sync::Arc;
+    const DEFAULT_EXECUTOR: &str = "executor";
+
+    impl<'a> EnqueuableJob<'a> {
+        pub(crate) const DEFAULT_EXECUTOR: &'static str = DEFAULT_EXECUTOR;
+
+        pub(crate) fn mock_job() -> Self {
+            Self {
+                executor: Self::DEFAULT_EXECUTOR.to_owned(),
+                data: serde_json::Value::String("data".to_owned()),
+                metadata: serde_json::Value::String("metadata".to_owned()),
+                max_attempts: 5,
+                scheduled_at: Utc::now(),
+                tags: Default::default(),
+                priority: 0,
+                uniqueness_criteria: None,
+            }
+        }
+
+        pub(crate) fn with_executor(self, executor: impl ToString) -> Self {
+            Self {
+                executor: executor.to_string(),
+                ..self
+            }
+        }
+
+        pub(crate) fn with_priority(self, priority: u16) -> Self {
+            Self { priority, ..self }
+        }
+
+        pub(crate) fn with_scheduled_at(self, scheduled_at: DateTime<Utc>) -> Self {
+            Self {
+                scheduled_at,
+                ..self
+            }
+        }
+
+        pub(crate) fn with_uniqueness_criteria(
+            self,
+            uniqueness_criteria: Option<UniquenessCriteria<'a>>,
+        ) -> Self {
+            Self {
+                uniqueness_criteria,
+                ..self
+            }
+        }
+    }
 
     impl Job {
+        pub(crate) const DEFAULT_EXECUTOR: &'static str = DEFAULT_EXECUTOR;
+
         pub(crate) fn mock_job<T: Executor>() -> Self {
             let now = Utc::now();
             Self {
@@ -435,7 +488,7 @@ pub(crate) mod test {
             let now = Utc::now();
             Self {
                 id: 0,
-                executor: "executor".to_owned(),
+                executor: Self::DEFAULT_EXECUTOR.to_owned(),
                 status: JobStatus::Scheduled,
                 data: serde_json::Value::Null,
                 metadata: serde_json::Value::Null,
@@ -482,6 +535,21 @@ pub(crate) mod test {
 
         pub(crate) fn with_attempt(self, attempt: i32) -> Self {
             Self { attempt, ..self }
+        }
+
+        pub(crate) fn with_tags(self, tags: Vec<String>) -> Self {
+            Self { tags, ..self }
+        }
+
+        pub(crate) fn with_scheduled_at(self, scheduled_at: DateTime<Utc>) -> Self {
+            Self {
+                scheduled_at,
+                ..self
+            }
+        }
+
+        pub(crate) fn with_status(self, status: JobStatus) -> Self {
+            Self { status, ..self }
         }
     }
 
@@ -589,6 +657,9 @@ pub(crate) mod test {
 
         assert!(smart_pointer_backend.rerun_job(42.into()).await.is_ok());
         assert!(smart_pointer_backend.update_job(job).await.is_ok());
-        assert!(smart_pointer_backend.query(Query::ExecutorEqual("")).await.is_ok());
+        assert!(smart_pointer_backend
+            .query(Query::ExecutorEqual(""))
+            .await
+            .is_ok());
     }
 }

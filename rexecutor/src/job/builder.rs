@@ -322,7 +322,7 @@ mod tests {
         let mut backend = MockBackend::default();
         backend
             .expect_enqueue()
-            .returning(move |_| Err(BackendError::BadStateError));
+            .returning(move |_| Err(BackendError::BadState));
 
         SimpleExecutor::builder()
             .with_max_attempts(2)

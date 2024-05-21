@@ -21,7 +21,7 @@ impl ReadyJobStream {
                 .backend
                 .next_available_job_scheduled_at_for_executor(self.executor_identifier.as_str())
                 .await
-                .map_err(|_| BackendError::BadStateError)?
+                .map_err(|_| BackendError::BadState)?
             {
                 Some(timestamp) => timestamp
                     .sub(Utc::now())
@@ -35,7 +35,7 @@ impl ReadyJobStream {
                     .backend
                     .load_job_mark_as_executing_for_executor(self.executor_identifier.as_str())
                     .await
-                    .map_err(|_| BackendError::BadStateError)?
+                    .map_err(|_| BackendError::BadState)?
                 {
                     return job.try_into();
                 }

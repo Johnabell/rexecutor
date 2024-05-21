@@ -48,12 +48,12 @@ impl Backend for RexecutorPgBackend {
             self.insert_job(job).await
         }
         // TODO error handling
-        .map_err(|_| BackendError::BadStateError)
+        .map_err(|_| BackendError::BadState)
     }
     async fn mark_job_complete(&self, id: JobId) -> Result<(), BackendError> {
         self._mark_job_complete(id)
             .await
-            .map_err(|_| BackendError::BadStateError)
+            .map_err(|_| BackendError::BadState)
     }
     async fn mark_job_retryable(
         &self,
@@ -63,7 +63,7 @@ impl Backend for RexecutorPgBackend {
     ) -> Result<(), BackendError> {
         self._mark_job_retryable(id, next_scheduled_at, error)
             .await
-            .map_err(|_| BackendError::BadStateError)
+            .map_err(|_| BackendError::BadState)
     }
     async fn mark_job_discarded(
         &self,
@@ -72,7 +72,7 @@ impl Backend for RexecutorPgBackend {
     ) -> Result<(), BackendError> {
         self._mark_job_discarded(id, error)
             .await
-            .map_err(|_| BackendError::BadStateError)
+            .map_err(|_| BackendError::BadState)
     }
     async fn mark_job_cancelled(
         &self,
@@ -81,7 +81,7 @@ impl Backend for RexecutorPgBackend {
     ) -> Result<(), BackendError> {
         self._mark_job_cancelled(id, error)
             .await
-            .map_err(|_| BackendError::BadStateError)
+            .map_err(|_| BackendError::BadState)
     }
     async fn mark_job_snoozed(
         &self,
@@ -90,27 +90,23 @@ impl Backend for RexecutorPgBackend {
     ) -> Result<(), BackendError> {
         self._mark_job_snoozed(id, next_scheduled_at)
             .await
-            .map_err(|_| BackendError::BadStateError)
+            .map_err(|_| BackendError::BadState)
     }
     async fn prune_jobs(&self, spec: &PruneSpec) -> Result<(), BackendError> {
         self.delete_from_spec(spec)
             .await
-            .map_err(|_| BackendError::BadStateError)
+            .map_err(|_| BackendError::BadState)
     }
     async fn rerun_job(&self, id: JobId) -> Result<(), BackendError> {
-        self.rerun(id)
-            .await
-            .map_err(|_| BackendError::BadStateError)
+        self.rerun(id).await.map_err(|_| BackendError::BadState)
     }
     async fn update_job(&self, job: Job) -> Result<(), BackendError> {
-        self.update(job)
-            .await
-            .map_err(|_| BackendError::BadStateError)
+        self.update(job).await.map_err(|_| BackendError::BadState)
     }
     async fn query<'a>(&self, query: Query<'a>) -> Result<Vec<Job>, BackendError> {
         self.run_query(query)
             .await
-            .map_err(|_| BackendError::BadStateError)?
+            .map_err(|_| BackendError::BadState)?
             .into_iter()
             .map(TryFrom::try_from)
             .collect()

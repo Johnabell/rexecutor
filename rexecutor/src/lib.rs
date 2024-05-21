@@ -164,7 +164,7 @@ mod tests {
 
         tokio::task::yield_now().await;
 
-        sender.send(Err(BackendError::BadStateError)).unwrap();
+        sender.send(Err(BackendError::BadState)).unwrap();
 
         tokio::task::yield_now().await;
     }
@@ -184,7 +184,7 @@ mod tests {
         let mut backend = MockBackend::default();
         backend
             .expect_mark_job_complete()
-            .returning(|_| Err(BackendError::BadStateError));
+            .returning(|_| Err(BackendError::BadState));
 
         let job = Job::mock_job::<MockReturnExecutor>().with_data(MockExecutionResult::Done);
 
@@ -210,7 +210,7 @@ mod tests {
         let mut backend = MockBackend::default();
         backend
             .expect_mark_job_retryable()
-            .returning(|_, _, _| Err(BackendError::BadStateError));
+            .returning(|_, _, _| Err(BackendError::BadState));
 
         let job = Job::mock_job::<MockReturnExecutor>().with_data(MockExecutionResult::Error {
             error: MockError("oh no".to_owned()),
@@ -251,7 +251,7 @@ mod tests {
         let mut backend = MockBackend::default();
         backend
             .expect_mark_job_discarded()
-            .returning(|_, _| Err(BackendError::BadStateError));
+            .returning(|_, _| Err(BackendError::BadState));
 
         let job = Job::mock_job::<MockReturnExecutor>()
             .with_data(MockExecutionResult::Error {
@@ -281,7 +281,7 @@ mod tests {
         let mut backend = MockBackend::default();
         backend
             .expect_mark_job_discarded()
-            .returning(|_, _| Err(BackendError::BadStateError));
+            .returning(|_, _| Err(BackendError::BadState));
 
         let job = Job::mock_job::<MockReturnExecutor>()
             .with_data(MockExecutionResult::Panic)
@@ -311,7 +311,7 @@ mod tests {
         let mut backend = MockBackend::default();
         backend
             .expect_mark_job_snoozed()
-            .returning(|_, _| Err(BackendError::BadStateError));
+            .returning(|_, _| Err(BackendError::BadState));
 
         let job = Job::mock_job::<MockReturnExecutor>()
             .with_data(MockExecutionResult::Snooze {
@@ -343,7 +343,7 @@ mod tests {
         let mut backend = MockBackend::default();
         backend
             .expect_mark_job_cancelled()
-            .returning(|_, _| Err(BackendError::BadStateError));
+            .returning(|_, _| Err(BackendError::BadState));
 
         let job = Job::mock_job::<MockReturnExecutor>()
             .with_data(MockExecutionResult::Cancelled {
@@ -378,7 +378,7 @@ mod tests {
         let _sender = backend.expect_subscribe_to_ready_jobs_with_stream();
         backend
             .expect_enqueue()
-            .returning(|_| Err(BackendError::BadStateError));
+            .returning(|_| Err(BackendError::BadState));
         let backend = Arc::new(backend);
 
         let _guard = Rexecutor::new(backend.clone())
@@ -413,7 +413,7 @@ mod tests {
         let mut backend = MockBackend::default();
         backend
             .expect_prune_jobs()
-            .returning(|_| Err(BackendError::BadStateError));
+            .returning(|_| Err(BackendError::BadState));
         let backend = Arc::new(backend);
 
         let pruner = PrunerConfig::new(schedule)
