@@ -51,6 +51,8 @@
 //!     .await;
 //! # });
 //! ```
+use std::marker::PhantomData;
+
 use crate::{
     backend::{Backend, EnqueuableJob},
     executor::Executor,
@@ -117,7 +119,8 @@ use super::JobId;
 /// # });
 /// ```
 // TODO add api to add as a cron job
-pub struct JobBuilder<'a, E>
+#[allow(private_bounds)]
+pub struct JobBuilder<'a, E, State: BuilderState = NoData>
 where
     E: Executor + 'static,
 {
@@ -128,7 +131,18 @@ where
     scheduled_at: DateTime<Utc>,
     priority: u16,
     uniqueness_criteria: Option<UniquenessCriteria<'a>>,
+    _state: PhantomData<State>,
 }
+
+trait BuilderState {}
+trait DataIsUnitOrOption {}
+impl DataIsUnitOrOption for () {}
+impl<T> DataIsUnitOrOption for Option<T> {}
+pub struct NoData;
+pub struct Enqueuable;
+
+impl BuilderState for NoData {}
+impl BuilderState for Enqueuable {}
 
 impl<'a, E> Default for JobBuilder<'a, E>
 where
@@ -143,21 +157,30 @@ where
             scheduled_at: Utc::now(),
             priority: 0,
             uniqueness_criteria: None,
+            _state: PhantomData,
         }
     }
 }
 
-impl<'a, E> JobBuilder<'a, E>
+#[allow(private_bounds)]
+impl<'a, E, State> JobBuilder<'a, E, State>
 where
     E: Executor,
+    State: BuilderState,
 {
     /// Adds the job's data.
     ///
     /// For jobs with data this will need to be called for every job inserted.
-    pub fn with_data(self, data: E::Data) -> Self {
-        Self {
+    pub fn with_data(self, data: E::Data) -> JobBuilder<'a, E, Enqueuable> {
+        JobBuilder {
             data: Some(data),
-            ..self
+            metadata: self.metadata,
+            max_attempts: self.max_attempts,
+            tags: self.tags,
+            scheduled_at: self.scheduled_at,
+            priority: self.priority,
+            uniqueness_criteria: self.uniqueness_criteria,
+            _state: PhantomData,
         }
     }
 
@@ -244,7 +267,56 @@ where
     pub fn with_priority(self, priority: u16) -> Self {
         Self { priority, ..self }
     }
+}
 
+#[allow(private_bounds)]
+impl<'a, E> JobBuilder<'a, E, NoData>
+where
+    E: Executor,
+    E::Data: DataIsUnitOrOption,
+{
+    /// Enqueue this job to the global backend.
+    ///
+    /// To make use this API and the global backend, [`crate::Rexecutor::set_global_backend`]
+    /// should be called. If this hasn't been called, then a [`RexecuterError::GlobalBackend`]
+    /// will be returned.
+    pub async fn enqueue(self) -> Result<JobId, RexecuterError>
+    where
+        E::Data: 'static + Send,
+    {
+        let backend = GLOBAL_BACKEND.get().ok_or(RexecuterError::GlobalBackend)?;
+
+        self.enqueue_to_backend(backend.as_ref()).await
+    }
+
+    /// Enqueue this job to the provided backend.
+    pub async fn enqueue_to_backend<B: Backend + ?Sized>(
+        self,
+        backend: &B,
+    ) -> Result<JobId, RexecuterError>
+    where
+        E::Data: 'static + Send,
+    {
+        let job_id = backend
+            .enqueue(EnqueuableJob {
+                data: serde_json::to_value(self.data)?,
+                metadata: serde_json::to_value(self.metadata)?,
+                executor: E::NAME.to_owned(),
+                max_attempts: self.max_attempts.unwrap_or(E::MAX_ATTEMPTS),
+                scheduled_at: self.scheduled_at,
+                tags: self.tags,
+                priority: self.priority,
+                uniqueness_criteria: self.uniqueness_criteria.or(E::UNIQUENESS_CRITERIA),
+            })
+            .await?;
+
+        Ok(job_id)
+    }
+}
+impl<'a, E> JobBuilder<'a, E, Enqueuable>
+where
+    E: Executor,
+{
     /// Enqueue this job to the global backend.
     ///
     /// To make use this API and the global backend, [`crate::Rexecutor::set_global_backend`]
