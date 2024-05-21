@@ -9,6 +9,7 @@ pub mod prelude;
 pub mod pruner;
 
 use backend::{Backend, BackendError};
+use chrono::{TimeZone, Utc};
 use cron_runner::CronRunner;
 use executor::Executor;
 use job::runner::JobRunner;
@@ -98,14 +99,61 @@ where
         self
     }
 
+    /// Setup a cron job to run on the given schedule with the given data.
+    ///
+    /// Note this will run the schedule according to UTC time on a schedule in another timezone use
+    /// [`Rexecutor::with_cron_executor_for_timezone`].
+    ///
+    /// # Example
+    ///
+    /// To setup a cron jobs to run every day at midnight you can use the following code.
+    ///
+    /// ```
+    /// # use rexecutor::prelude::*;
+    /// # use rexecutor::backend::{Backend, memory::InMemoryBackend};
+    /// struct CronJob;
+    /// #[async_trait::async_trait]
+    /// impl Executor for CronJob {
+    ///     type Data = String;
+    ///     type Metadata = ();
+    ///     const NAME: &'static str = "cron_job";
+    ///     const MAX_ATTEMPTS: u16 = 1;
+    ///     async fn execute(job: Job<Self::Data, Self::Metadata>) -> ExecutionResult {
+    ///         /// Do something important
+    ///         ExecutionResult::Done
+    ///     }
+    /// }
+    /// # tokio::runtime::Builder::new_current_thread().build().unwrap().block_on(async {
+    /// let schedule = cron::Schedule::try_from("0 0 0 * * *").unwrap();
+    ///
+    /// let backend = InMemoryBackend::new();
+    /// Rexecutor::new(backend).with_cron_executor::<CronJob>(schedule, "important data".to_owned());
+    /// # });
+    /// ```
     pub fn with_cron_executor<E>(self, schedule: cron::Schedule, data: E::Data) -> Self
     where
         E: Executor + 'static + Sync + Send,
         E::Data: Send + Sync + Serialize + DeserializeOwned + Clone + Hash,
         E::Metadata: Serialize + DeserializeOwned + Send + Sync,
     {
+        self.with_cron_executor_for_timezone::<E, _>(schedule, data, Utc)
+    }
+
+    /// Setup a cron job to run on the given schedule with the given data in the given timezome.
+    pub fn with_cron_executor_for_timezone<E, Z>(
+        self,
+        schedule: cron::Schedule,
+        data: E::Data,
+        timezone: Z,
+    ) -> Self
+    where
+        E: Executor + 'static + Sync + Send,
+        E::Data: Send + Sync + Serialize + DeserializeOwned + Clone + Hash,
+        E::Metadata: Serialize + DeserializeOwned + Send + Sync,
+        Z: TimeZone + Send + 'static,
+    {
         CronRunner::<B, E>::new(self.backend.clone(), schedule, data)
-            .spawn(self.cancellation_token.clone());
+            .spawn(timezone, self.cancellation_token.clone());
 
         self.with_executor::<E>()
     }

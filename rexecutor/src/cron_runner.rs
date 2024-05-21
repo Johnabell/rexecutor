@@ -1,6 +1,6 @@
 use std::{hash::Hash, marker::PhantomData, ops::Sub, time::Duration};
 
-use chrono::{DateTime, TimeDelta, Utc};
+use chrono::{DateTime, TimeDelta, TimeZone, Utc};
 use cron::Schedule;
 use serde::{de::DeserializeOwned, Serialize};
 use tokio_util::sync::CancellationToken;
@@ -36,15 +36,20 @@ where
         }
     }
 
-    pub(crate) fn spawn(self, cancellation_token: CancellationToken) {
+    pub(crate) fn spawn(
+        self,
+        timezone: impl TimeZone + Send + 'static,
+        cancellation_token: CancellationToken,
+    ) {
         tokio::spawn({
             async move {
                 loop {
                     let next = self
                         .schedule
-                        .upcoming(Utc)
+                        .upcoming(timezone.clone())
                         .next()
-                        .expect("No future scheduled time for cron job");
+                        .expect("No future scheduled time for cron job")
+                        .to_utc();
                     let delay = next
                         .sub(Utc::now())
                         .sub(TimeDelta::milliseconds(10))
