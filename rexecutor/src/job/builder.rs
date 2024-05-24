@@ -134,15 +134,26 @@ where
     _state: PhantomData<State>,
 }
 
+/// Internal trait for states of the job builder.
 trait BuilderState {}
-trait DataIsUnitOrOption {}
-impl DataIsUnitOrOption for () {}
-impl<T> DataIsUnitOrOption for Option<T> {}
+
+/// Builder in a state before the data has been specified.
 pub struct NoData;
-pub struct Enqueuable;
+/// Builder in state where the data has been specified.
+pub struct WithData;
 
 impl BuilderState for NoData {}
-impl BuilderState for Enqueuable {}
+impl BuilderState for WithData {}
+
+/// Marker trait to specify that it is possible to enqueue a job without data.
+///
+/// Currently this is implemented for unit and [`Option<T>`].
+///
+/// Consider making this a public trait.
+trait DataOptional {}
+
+impl DataOptional for () {}
+impl<T> DataOptional for Option<T> {}
 
 impl<'a, E> Default for JobBuilder<'a, E>
 where
@@ -171,7 +182,7 @@ where
     /// Adds the job's data.
     ///
     /// For jobs with data this will need to be called for every job inserted.
-    pub fn with_data(self, data: E::Data) -> JobBuilder<'a, E, Enqueuable> {
+    pub fn with_data(self, data: E::Data) -> JobBuilder<'a, E, WithData> {
         JobBuilder {
             data: Some(data),
             metadata: self.metadata,
@@ -267,13 +278,46 @@ where
     pub fn with_priority(self, priority: u16) -> Self {
         Self { priority, ..self }
     }
+
+    async fn _enqueue(self) -> Result<JobId, RexecuterError>
+    where
+        E::Data: 'static + Send,
+    {
+        let backend = GLOBAL_BACKEND.get().ok_or(RexecuterError::GlobalBackend)?;
+
+        self._enqueue_to_backend(backend.as_ref()).await
+    }
+
+    /// Enqueue this job to the provided backend.
+    async fn _enqueue_to_backend<B: Backend + ?Sized>(
+        self,
+        backend: &B,
+    ) -> Result<JobId, RexecuterError>
+    where
+        E::Data: 'static + Send,
+    {
+        let job_id = backend
+            .enqueue(EnqueuableJob {
+                data: serde_json::to_value(self.data)?,
+                metadata: serde_json::to_value(self.metadata)?,
+                executor: E::NAME.to_owned(),
+                max_attempts: self.max_attempts.unwrap_or(E::MAX_ATTEMPTS),
+                scheduled_at: self.scheduled_at,
+                tags: self.tags,
+                priority: self.priority,
+                uniqueness_criteria: self.uniqueness_criteria.or(E::UNIQUENESS_CRITERIA),
+            })
+            .await?;
+
+        Ok(job_id)
+    }
 }
 
 #[allow(private_bounds)]
 impl<'a, E> JobBuilder<'a, E, NoData>
 where
     E: Executor,
-    E::Data: DataIsUnitOrOption,
+    E::Data: DataOptional,
 {
     /// Enqueue this job to the global backend.
     ///
@@ -284,9 +328,7 @@ where
     where
         E::Data: 'static + Send,
     {
-        let backend = GLOBAL_BACKEND.get().ok_or(RexecuterError::GlobalBackend)?;
-
-        self.enqueue_to_backend(backend.as_ref()).await
+        self._enqueue().await
     }
 
     /// Enqueue this job to the provided backend.
@@ -297,23 +339,10 @@ where
     where
         E::Data: 'static + Send,
     {
-        let job_id = backend
-            .enqueue(EnqueuableJob {
-                data: serde_json::to_value(self.data)?,
-                metadata: serde_json::to_value(self.metadata)?,
-                executor: E::NAME.to_owned(),
-                max_attempts: self.max_attempts.unwrap_or(E::MAX_ATTEMPTS),
-                scheduled_at: self.scheduled_at,
-                tags: self.tags,
-                priority: self.priority,
-                uniqueness_criteria: self.uniqueness_criteria.or(E::UNIQUENESS_CRITERIA),
-            })
-            .await?;
-
-        Ok(job_id)
+        self._enqueue_to_backend(backend).await
     }
 }
-impl<'a, E> JobBuilder<'a, E, Enqueuable>
+impl<'a, E> JobBuilder<'a, E, WithData>
 where
     E: Executor,
 {
@@ -326,9 +355,7 @@ where
     where
         E::Data: 'static + Send,
     {
-        let backend = GLOBAL_BACKEND.get().ok_or(RexecuterError::GlobalBackend)?;
-
-        self.enqueue_to_backend(backend.as_ref()).await
+        self._enqueue().await
     }
 
     /// Enqueue this job to the provided backend.
@@ -339,20 +366,7 @@ where
     where
         E::Data: 'static + Send,
     {
-        let job_id = backend
-            .enqueue(EnqueuableJob {
-                data: serde_json::to_value(self.data)?,
-                metadata: serde_json::to_value(self.metadata)?,
-                executor: E::NAME.to_owned(),
-                max_attempts: self.max_attempts.unwrap_or(E::MAX_ATTEMPTS),
-                scheduled_at: self.scheduled_at,
-                tags: self.tags,
-                priority: self.priority,
-                uniqueness_criteria: self.uniqueness_criteria.or(E::UNIQUENESS_CRITERIA),
-            })
-            .await?;
-
-        Ok(job_id)
+        self._enqueue_to_backend(backend).await
     }
 }
 
