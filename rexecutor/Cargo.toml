@@ -2,11 +2,13 @@
 name = "rexecutor"
 version = "0.1.0"
 edition = "2021"
+# We need 1.75 for RPIT, however, currently we are using inspect_error, which was released in 1.76.0
+# Should we remove inspect_error to set the MSRV to 1.75.0?
+rust-version = "1.76.0"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 # TODO: add features like rand, and cron.
 # TODO: set version to older versions to enable building with projects with out of data deps.
-# TODO: set MSRV
 
 [dependencies]
 async-stream = "0.3.5"

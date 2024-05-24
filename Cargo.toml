@@ -1,3 +1,4 @@
 [workspace]
 resolver = "2"
 members = ["rexecutor", "rexecutor-sqlx", "examples/*"]
+rust-version = "1.76.0"
