@@ -1,9 +1,10 @@
-use std::{hash::Hash, marker::PhantomData, sync::Arc};
+use std::{hash::Hash, marker::PhantomData};
 
 pub mod backend;
 pub mod backoff;
 mod cron_runner;
 pub mod executor;
+pub mod global_backend;
 pub mod job;
 pub mod prelude;
 pub mod pruner;
@@ -12,11 +13,11 @@ use backend::{Backend, BackendError};
 use chrono::{TimeZone, Utc};
 use cron_runner::CronRunner;
 use executor::Executor;
+use global_backend::GlobalBackend;
 use job::runner::JobRunner;
 use pruner::{runner::PrunerRunner, PrunerConfig};
 use serde::{de::DeserializeOwned, Serialize};
 use thiserror::Error;
-use tokio::sync::OnceCell;
 use tokio_util::sync::CancellationToken;
 
 trait InternalRexecutorState {}
@@ -61,19 +62,12 @@ where
 #[allow(dead_code)]
 pub struct DropGuard(tokio_util::sync::DropGuard);
 
-static GLOBAL_BACKEND: OnceCell<Arc<dyn Backend + 'static + Sync + Send>> = OnceCell::const_new();
-
 impl<B> Rexecutor<B, GlobalUnset>
 where
     B: Backend + Send + 'static + Sync + Clone,
 {
     pub fn set_global_backend(self) -> Result<Rexecutor<B, GlobalSet>, RexecuterError> {
-        GLOBAL_BACKEND
-            .set(Arc::new(self.backend.clone()))
-            .map_err(|err| {
-                tracing::error!(%err, "Couldn't set global backend {err}");
-                RexecuterError::GlobalBackend
-            })?;
+        GlobalBackend::set(self.backend.clone())?;
 
         Ok(Rexecutor {
             cancellation_token: self.cancellation_token,
@@ -190,7 +184,7 @@ pub enum RexecuterError {
 
 #[cfg(test)]
 mod tests {
-    use std::time::Duration;
+    use std::{sync::Arc, time::Duration};
 
     use super::*;
     use crate::{

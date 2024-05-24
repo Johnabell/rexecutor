@@ -95,8 +95,9 @@ use std::{error::Error, fmt::Display};
 use crate::{
     backend::{Backend, Query},
     backoff::{BackoffStrategy, Exponential, Jitter, Strategy},
+    global_backend::GlobalBackend,
     job::{builder::JobBuilder, query::Where, uniqueness_criteria::UniquenessCriteria, Job, JobId},
-    RexecuterError, GLOBAL_BACKEND,
+    RexecuterError,
 };
 type Result<T> = std::result::Result<T, RexecuterError>;
 
@@ -319,8 +320,7 @@ pub trait Executor {
         job_id: JobId,
         cancellation_reason: Box<dyn CancellationReason>,
     ) -> Result<()> {
-        let backend = GLOBAL_BACKEND.get().ok_or(RexecuterError::GlobalBackend)?;
-        Self::cancel_job_on_backend(job_id, cancellation_reason, backend.as_ref()).await
+        Self::cancel_job_on_backend(job_id, cancellation_reason, GlobalBackend::as_ref()?).await
     }
 
     /// Cancel a job with the given reason on the provided backend.
@@ -367,8 +367,7 @@ pub trait Executor {
     /// # });
     /// ```
     async fn rerun_job(job_id: JobId) -> Result<()> {
-        let backend = GLOBAL_BACKEND.get().ok_or(RexecuterError::GlobalBackend)?;
-        Self::rerun_job_on_backend(job_id, backend.as_ref()).await
+        Self::rerun_job_on_backend(job_id, GlobalBackend::as_ref()?).await
     }
 
     /// Rerun a completed or discarded job on the provided backend.
@@ -418,8 +417,7 @@ pub trait Executor {
         Self::Data: 'static + Send + Serialize + DeserializeOwned + Sync,
         Self::Metadata: 'static + Send + Serialize + DeserializeOwned + Sync,
     {
-        let backend = GLOBAL_BACKEND.get().ok_or(RexecuterError::GlobalBackend)?;
-        Self::query_jobs_on_backend(query, backend.as_ref()).await
+        Self::query_jobs_on_backend(query, GlobalBackend::as_ref()?).await
     }
 
     /// Query the jobs for this executor using the provided query on the provided backend.
@@ -475,8 +473,7 @@ pub trait Executor {
         Self::Data: 'static + Send + Serialize + Sync,
         Self::Metadata: 'static + Send + Serialize + Sync,
     {
-        let backend = GLOBAL_BACKEND.get().ok_or(RexecuterError::GlobalBackend)?;
-        Self::update_job_on_backend(job, backend.as_ref()).await
+        Self::update_job_on_backend(job, GlobalBackend::as_ref()?).await
     }
 
     /// Update the given job

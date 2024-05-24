@@ -56,8 +56,9 @@ use std::marker::PhantomData;
 use crate::{
     backend::{Backend, EnqueuableJob},
     executor::Executor,
+    global_backend::GlobalBackend,
     job::uniqueness_criteria::UniquenessCriteria,
-    RexecuterError, GLOBAL_BACKEND,
+    RexecuterError,
 };
 use chrono::{DateTime, Duration, Utc};
 
@@ -283,9 +284,7 @@ where
     where
         E::Data: 'static + Send,
     {
-        let backend = GLOBAL_BACKEND.get().ok_or(RexecuterError::GlobalBackend)?;
-
-        self._enqueue_to_backend(backend.as_ref()).await
+        self._enqueue_to_backend(GlobalBackend::as_ref()?).await
     }
 
     /// Enqueue this job to the provided backend.
