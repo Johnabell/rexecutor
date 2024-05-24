@@ -8,7 +8,11 @@
 //!
 //! ```
 //! # use rexecutor::prelude::*;
-//! # use chrono::TimeDelta;
+//! # use chrono::{Utc, TimeDelta};
+//! # use rexecutor::backend::memory::InMemoryBackend;
+//! # use rexecutor::assert_enqueued;
+//! # let backend = InMemoryBackend::new().paused();
+//! # Rexecutor::new(backend).set_global_backend().unwrap();
 //! struct EmailJob;
 //!
 //! #[async_trait::async_trait]
@@ -30,6 +34,13 @@
 //!     .schedule_in(TimeDelta::hours(3))
 //!     .enqueue()
 //!     .await;
+//!
+//! assert_enqueued!(
+//!     with_data: "bob.shuruncle@example.com".to_owned(),
+//!     scheduled_after: Utc::now() + TimeDelta::minutes(170),
+//!     scheduled_before: Utc::now() + TimeDelta::minutes(190),
+//!     for_executor: EmailJob
+//! );
 //! # });
 //! ```
 //!
@@ -44,7 +55,11 @@
 //!
 //! ```
 //! # use rexecutor::prelude::*;
-//! # use chrono::TimeDelta;
+//! # use chrono::{Utc, TimeDelta};
+//! # use rexecutor::backend::memory::InMemoryBackend;
+//! # use rexecutor::assert_enqueued;
+//! # let backend = InMemoryBackend::new().paused();
+//! # Rexecutor::new(backend).set_global_backend().unwrap();
 //! struct UniqueJob;
 //!
 //! #[async_trait::async_trait]
@@ -66,9 +81,15 @@
 //! }
 //!
 //! # tokio::runtime::Builder::new_current_thread().build().unwrap().block_on(async {
-//! // Only one of these jobs will be enqueued
 //! let _ = UniqueJob::builder().enqueue().await;
 //! let _ = UniqueJob::builder().enqueue().await;
+//!
+//! // Only one of jobs was enqueued
+//! assert_enqueued!(
+//!     1 job,
+//!     scheduled_before: Utc::now(),
+//!     for_executor: UniqueJob
+//! );
 //! # });
 //! ```
 //!
@@ -97,9 +118,9 @@ use crate::{
     backoff::{BackoffStrategy, Exponential, Jitter, Strategy},
     global_backend::GlobalBackend,
     job::{builder::JobBuilder, query::Where, uniqueness_criteria::UniquenessCriteria, Job, JobId},
-    RexecuterError,
+    RexecutorError,
 };
-type Result<T> = std::result::Result<T, RexecuterError>;
+type Result<T> = std::result::Result<T, RexecutorError>;
 
 /// The default backoff strategy for exucutor jobs:
 ///  - exponential backoff with initial backoff of 4 seconds, and
@@ -120,7 +141,11 @@ const DEFAULT_BACKOFF_STRATEGY: BackoffStrategy<Exponential> =
 ///
 /// ```
 /// # use rexecutor::prelude::*;
-/// # use chrono::TimeDelta;
+/// # use chrono::{Utc, TimeDelta};
+/// # use rexecutor::backend::memory::InMemoryBackend;
+/// # use rexecutor::assert_enqueued;
+/// # let backend = InMemoryBackend::new().paused();
+/// # Rexecutor::new(backend).set_global_backend().unwrap();
 /// struct EmailJob;
 ///
 /// #[async_trait::async_trait]
@@ -142,6 +167,13 @@ const DEFAULT_BACKOFF_STRATEGY: BackoffStrategy<Exponential> =
 ///     .schedule_in(TimeDelta::hours(3))
 ///     .enqueue()
 ///     .await;
+///
+/// assert_enqueued!(
+///     with_data: "bob.shuruncle@example.com".to_owned(),
+///     scheduled_after: Utc::now() + TimeDelta::minutes(170),
+///     scheduled_before: Utc::now() + TimeDelta::minutes(190),
+///     for_executor: EmailJob
+/// );
 /// # });
 /// ```
 ///
@@ -156,7 +188,11 @@ const DEFAULT_BACKOFF_STRATEGY: BackoffStrategy<Exponential> =
 ///
 /// ```
 /// # use rexecutor::prelude::*;
-/// # use chrono::TimeDelta;
+/// # use chrono::{Utc, TimeDelta};
+/// # use rexecutor::backend::memory::InMemoryBackend;
+/// # use rexecutor::assert_enqueued;
+/// # let backend = InMemoryBackend::new().paused();
+/// # Rexecutor::new(backend).set_global_backend().unwrap();
 /// struct UniqueJob;
 ///
 /// #[async_trait::async_trait]
@@ -178,9 +214,15 @@ const DEFAULT_BACKOFF_STRATEGY: BackoffStrategy<Exponential> =
 /// }
 ///
 /// # tokio::runtime::Builder::new_current_thread().build().unwrap().block_on(async {
-/// // Only one of these jobs will be enqueued
 /// let _ = UniqueJob::builder().enqueue().await;
 /// let _ = UniqueJob::builder().enqueue().await;
+///
+/// // Only one of jobs was enqueued
+/// assert_enqueued!(
+///     1 job,
+///     scheduled_before: Utc::now(),
+///     for_executor: UniqueJob
+/// );
 /// # });
 /// ```
 ///
@@ -290,7 +332,7 @@ pub trait Executor {
     /// Cancel a job with the given reason.
     ///
     /// To make use this API and the global backend, [`crate::Rexecutor::set_global_backend`]
-    /// should be called. If this hasn't been called, then a [`RexecuterError::GlobalBackend`]
+    /// should be called. If this hasn't been called, then a [`RexecutorError::GlobalBackend`]
     /// will be returned.
     ///
     /// # Example
@@ -341,7 +383,7 @@ pub trait Executor {
     /// Rerun a completed or discarded job.
     ///
     /// To make use this API and the global backend, [`crate::Rexecutor::set_global_backend`]
-    /// should be called. If this hasn't been called, then a [`RexecuterError::GlobalBackend`]
+    /// should be called. If this hasn't been called, then a [`RexecutorError::GlobalBackend`]
     /// will be returned.
     ///
     /// # Example
@@ -384,7 +426,7 @@ pub trait Executor {
     /// For details of the query API see [`Where`].
     ///
     /// To make use this API and the global backend, [`crate::Rexecutor::set_global_backend`]
-    /// should be called. If this hasn't been called, then a [`RexecuterError::GlobalBackend`]
+    /// should be called. If this hasn't been called, then a [`RexecutorError::GlobalBackend`]
     /// will be returned.
     ///
     /// # Example
@@ -443,7 +485,7 @@ pub trait Executor {
     /// Update the given job
     ///
     /// To make use this API and the global backend, [`crate::Rexecutor::set_global_backend`]
-    /// should be called. If this hasn't been called, then a [`RexecuterError::GlobalBackend`]
+    /// should be called. If this hasn't been called, then a [`RexecutorError::GlobalBackend`]
     /// will be returned.
     ///
     /// # Example

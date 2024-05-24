@@ -4,6 +4,7 @@ pub mod backend;
 pub mod backoff;
 mod cron_runner;
 pub mod executor;
+#[doc(hidden)]
 pub mod global_backend;
 pub mod job;
 pub mod prelude;
@@ -67,7 +68,7 @@ impl<B> Rexecutor<B, GlobalUnset>
 where
     B: Backend + Send + 'static + Sync + Clone,
 {
-    pub fn set_global_backend(self) -> Result<Rexecutor<B, GlobalSet>, RexecuterError> {
+    pub fn set_global_backend(self) -> Result<Rexecutor<B, GlobalSet>, RexecutorError> {
         GlobalBackend::set(self.backend.clone())?;
 
         Ok(Rexecutor {
@@ -170,7 +171,7 @@ where
 
 // TODO: split errors
 #[derive(Debug, Error)]
-pub enum RexecuterError {
+pub enum RexecutorError {
     #[error("Failed to gracefully shut down")]
     GracefulShutdownFailed,
     #[error("Error communicating with the backend")]

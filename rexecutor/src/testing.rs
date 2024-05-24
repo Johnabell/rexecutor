@@ -11,12 +11,12 @@
 ///
 /// ```
 /// # use rexecutor::prelude::*;
-/// # use rexecutor::testing::assert_enqueued;
+/// # use rexecutor::assert_enqueued;
 /// # use chrono::{Utc, TimeDelta};
-/// # pub(crate) struct SimpleExecutor;
+/// # pub(crate) struct ExampleExecutor;
 /// #
 /// # #[async_trait::async_trait]
-/// # impl Executor for SimpleExecutor {
+/// # impl Executor for ExampleExecutor {
 /// #     type Data = String;
 /// #     type Metadata = String;
 /// #     const NAME: &'static str = "simple_executor";
@@ -30,7 +30,7 @@
 /// let backend = InMemoryBackend::new().paused();
 /// let scheduled_at = Utc::now() + TimeDelta::minutes(5);
 ///
-/// SimpleExecutor::builder()
+/// ExampleExecutor::builder()
 ///     .with_data("data".to_owned())
 ///     .with_metadata("metadata".to_owned())
 ///     .with_tags(vec!["tag1", "tag2"])
@@ -39,7 +39,7 @@
 ///     .await
 ///     .unwrap();
 ///
-/// SimpleExecutor::builder()
+/// ExampleExecutor::builder()
 ///     .with_data("data2".to_owned())
 ///     .with_metadata("metadata2".to_owned())
 ///     .with_tags(vec!["tag2", "tag3"])
@@ -53,7 +53,7 @@
 ///     to: backend,
 ///     with_data: "data".to_owned(),
 ///     scheduled_at: scheduled_at,
-///     for_executor: SimpleExecutor
+///     for_executor: ExampleExecutor
 /// );
 ///
 /// assert_enqueued!(
@@ -61,7 +61,7 @@
 ///     to: backend,
 ///     with_metadata: "metadata2".to_owned(),
 ///     scheduled_after: Utc::now(),
-///     for_executor: SimpleExecutor
+///     for_executor: ExampleExecutor
 /// );
 ///
 /// assert_enqueued!(
@@ -69,7 +69,7 @@
 ///     to: backend,
 ///     tagged_with: ["tag2"],
 ///     scheduled_before: Utc::now() + TimeDelta::hours(1),
-///     for_executor: SimpleExecutor
+///     for_executor: ExampleExecutor
 /// );
 /// # });
 /// ```
@@ -82,12 +82,12 @@
 ///
 /// ```
 /// # use rexecutor::prelude::*;
-/// # use rexecutor::testing::assert_enqueued;
+/// # use rexecutor::assert_enqueued;
 /// # use chrono::Utc;
-/// # pub(crate) struct SimpleExecutor;
+/// # pub(crate) struct ExampleExecutor;
 /// #
 /// # #[async_trait::async_trait]
-/// # impl Executor for SimpleExecutor {
+/// # impl Executor for ExampleExecutor {
 /// #     type Data = String;
 /// #     type Metadata = String;
 /// #     const NAME: &'static str = "simple_executor";
@@ -103,7 +103,7 @@
 ///
 /// Rexecutor::new(backend).set_global_backend().unwrap();
 ///
-/// SimpleExecutor::builder()
+/// ExampleExecutor::builder()
 ///     .with_data("data".to_owned())
 ///     .enqueue()
 ///     .await
@@ -111,10 +111,10 @@
 ///
 /// assert_enqueued!(
 ///     with_data: "data".to_owned(),
-///     for_executor: SimpleExecutor
+///     for_executor: ExampleExecutor
 /// );
 ///
-/// SimpleExecutor::builder()
+/// ExampleExecutor::builder()
 ///     .with_data("data".to_owned())
 ///     .enqueue()
 ///     .await
@@ -123,10 +123,11 @@
 /// assert_enqueued!(
 ///     2 jobs,
 ///     with_data: "data".to_owned(),
-///     for_executor: SimpleExecutor
+///     for_executor: ExampleExecutor
 /// );
 /// # });
 /// ```
+// TODO: do some refactoring here to prevent recursion limit issue
 #[macro_export]
 macro_rules! assert_enqueued {
     (1 job, to: $backend:ident, $($tail:tt)*) => {

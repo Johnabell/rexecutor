@@ -19,20 +19,22 @@
 //! Jobs can either be enqueued onto a specific backend via [`JobBuilder::enqueue_to_backend`] or
 //! enqueued to a globally set backend via [`JobBuilder::enqueue`]. To make use this API and the
 //! global backend, [`crate::Rexecutor::set_global_backend`] should be called. If this hasn't been
-//! called, then a [`RexecuterError::GlobalBackend`] will be returned.
+//! called, then a [`RexecutorError::GlobalBackend`] will be returned.
 //!
 //! # Example
 //!
-//! To enqueue a job to the global backend for an [`Executor`] called `SimpleExecutor` the
+//! To enqueue a job to the global backend for an [`Executor`] called `ExampleExecutor` the
 //! following code can be executed:
 //!
 //! ```
 //! # use rexecutor::prelude::*;
-//! # use chrono::TimeDelta;
-//! # pub(crate) struct SimpleExecutor;
+//! # use chrono::{Utc, TimeDelta};
+//! # use rexecutor::backend::memory::InMemoryBackend;
+//! # use rexecutor::assert_enqueued;
+//! # pub(crate) struct ExampleExecutor;
 //! #
 //! # #[async_trait::async_trait]
-//! # impl Executor for SimpleExecutor {
+//! # impl Executor for ExampleExecutor {
 //! #     type Data = String;
 //! #     type Metadata = String;
 //! #     const NAME: &'static str = "simple_executor";
@@ -42,13 +44,25 @@
 //! #     }
 //! # }
 //! # tokio::runtime::Builder::new_current_thread().build().unwrap().block_on(async {
-//! let result = SimpleExecutor::builder()
+//! let backend = InMemoryBackend::new().paused();
+//! Rexecutor::new(backend).set_global_backend().unwrap();
+//!
+//! ExampleExecutor::builder()
 //!     .with_max_attempts(2)
 //!     .with_tags(vec!["initial_job", "delayed"])
 //!     .with_data("First job".into())
 //!     .schedule_in(TimeDelta::hours(2))
 //!     .enqueue()
-//!     .await;
+//!     .await
+//!     .unwrap();
+//!
+//! assert_enqueued!(
+//!     with_data: "First job".to_owned(),
+//!     tagged_with: ["initial_job", "delayed"],
+//!     scheduled_after: Utc::now() + TimeDelta::minutes(110),
+//!     scheduled_before: Utc::now() + TimeDelta::minutes(130),
+//!     for_executor: ExampleExecutor
+//! );
 //! # });
 //! ```
 use std::marker::PhantomData;
@@ -58,7 +72,7 @@ use crate::{
     executor::Executor,
     global_backend::GlobalBackend,
     job::uniqueness_criteria::UniquenessCriteria,
-    RexecuterError,
+    RexecutorError,
 };
 use chrono::{DateTime, Duration, Utc};
 
@@ -85,20 +99,22 @@ use super::JobId;
 /// Jobs can either be enqueued onto a specific backend via [`JobBuilder::enqueue_to_backend`] or
 /// enqueued to a globally set backend via [`JobBuilder::enqueue`]. To make use this API and the
 /// global backend, [`crate::Rexecutor::set_global_backend`] should be called. If this hasn't been
-/// called, then a [`RexecuterError::GlobalBackend`] will be returned.
+/// called, then a [`RexecutorError::GlobalBackend`] will be returned.
 ///
 /// # Example
 ///
-/// To enqueue a job to the global backend for an [`Executor`] called `SimpleExecutor` the
+/// To enqueue a job to the global backend for an [`Executor`] called `ExampleExecutor` the
 /// following code can be executed:
 ///
 /// ```
 /// # use rexecutor::prelude::*;
-/// # use chrono::Utc;
-/// # pub(crate) struct SimpleExecutor;
+/// # use chrono::{Utc, TimeDelta};
+/// # use rexecutor::backend::memory::InMemoryBackend;
+/// # use rexecutor::assert_enqueued;
+/// # pub(crate) struct ExampleExecutor;
 /// #
 /// # #[async_trait::async_trait]
-/// # impl Executor for SimpleExecutor {
+/// # impl Executor for ExampleExecutor {
 /// #     type Data = String;
 /// #     type Metadata = String;
 /// #     const NAME: &'static str = "simple_executor";
@@ -108,7 +124,10 @@ use super::JobId;
 /// #     }
 /// # }
 /// # tokio::runtime::Builder::new_current_thread().build().unwrap().block_on(async {
-/// let result = SimpleExecutor::builder()
+/// let backend = InMemoryBackend::new().paused();
+/// Rexecutor::new(backend).set_global_backend().unwrap();
+///
+/// ExampleExecutor::builder()
 ///     .with_max_attempts(2)
 ///     .with_priority(2)
 ///     .add_tag("initial_job")
@@ -116,7 +135,17 @@ use super::JobId;
 ///     .with_metadata("550e8400-e29b-41d4-a716-446655440000".into())
 ///     .schedule_at(Utc::now())
 ///     .enqueue()
-///     .await;
+///     .await
+///     .unwrap();
+///
+/// assert_enqueued!(
+///     with_data: "First job".to_owned(),
+///     with_metadata: "550e8400-e29b-41d4-a716-446655440000".to_owned(),
+///     tagged_with: ["initial_job"],
+///     scheduled_after: Utc::now() - TimeDelta::minutes(1),
+///     scheduled_before: Utc::now(),
+///     for_executor: ExampleExecutor
+/// );
 /// # });
 /// ```
 // TODO add api to add as a cron job
@@ -280,7 +309,7 @@ where
         Self { priority, ..self }
     }
 
-    async fn _enqueue(self) -> Result<JobId, RexecuterError>
+    async fn _enqueue(self) -> Result<JobId, RexecutorError>
     where
         E::Data: 'static + Send,
     {
@@ -291,7 +320,7 @@ where
     async fn _enqueue_to_backend<B: Backend + ?Sized>(
         self,
         backend: &B,
-    ) -> Result<JobId, RexecuterError>
+    ) -> Result<JobId, RexecutorError>
     where
         E::Data: 'static + Send,
     {
@@ -321,9 +350,66 @@ where
     /// Enqueue this job to the global backend.
     ///
     /// To make use this API and the global backend, [`crate::Rexecutor::set_global_backend`]
-    /// should be called. If this hasn't been called, then a [`RexecuterError::GlobalBackend`]
+    /// should be called. If this hasn't been called, then a [`RexecutorError::GlobalBackend`]
     /// will be returned.
-    pub async fn enqueue(self) -> Result<JobId, RexecuterError>
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// # use rexecutor::prelude::*;
+    /// # use chrono::{Utc, TimeDelta};
+    /// # use rexecutor::backend::memory::InMemoryBackend;
+    /// # use rexecutor::RexecutorError;
+    /// # use rexecutor::assert_enqueued;
+    /// # pub(crate) struct ExampleExecutor;
+    /// #
+    /// # #[async_trait::async_trait]
+    /// # impl Executor for ExampleExecutor {
+    /// #     type Data = ();
+    /// #     type Metadata = String;
+    /// #     const NAME: &'static str = "simple_executor";
+    /// #     const MAX_ATTEMPTS: u16 = 2;
+    /// #     async fn execute(_job: Job<Self::Data, Self::Metadata>) -> ExecutionResult {
+    /// #         ExecutionResult::Done
+    /// #     }
+    /// # }
+    /// # tokio::runtime::Builder::new_current_thread().build().unwrap().block_on(async {
+    /// // If we have not set the global backend, we get an error.
+    /// let result = ExampleExecutor::builder()
+    ///     .with_max_attempts(2)
+    ///     .with_priority(2)
+    ///     .add_tag("initial_job")
+    ///     .with_metadata("550e8400-e29b-41d4-a716-446655440000".into())
+    ///     .schedule_at(Utc::now())
+    ///     .enqueue()
+    ///     .await;
+    ///
+    /// assert!(matches!(result, Err(RexecutorError::GlobalBackend)));
+    ///
+    /// // When we set the global backend, we can enqueue to it.
+    /// let backend = InMemoryBackend::new().paused();
+    /// Rexecutor::new(backend).set_global_backend().unwrap();
+    ///
+    /// ExampleExecutor::builder()
+    ///     .with_max_attempts(2)
+    ///     .with_priority(2)
+    ///     .add_tag("initial_job")
+    ///     .with_metadata("550e8400-e29b-41d4-a716-446655440000".into())
+    ///     .schedule_at(Utc::now())
+    ///     .enqueue()
+    ///     .await
+    ///     .unwrap();
+    ///
+    /// assert_enqueued!(
+    ///     with_metadata: "550e8400-e29b-41d4-a716-446655440000".to_owned(),
+    ///     tagged_with: ["initial_job"],
+    ///     scheduled_after: Utc::now() - TimeDelta::minutes(1),
+    ///     scheduled_before: Utc::now(),
+    ///     for_executor: ExampleExecutor
+    /// );
+    /// # });
+    /// ```
+    pub async fn enqueue(self) -> Result<JobId, RexecutorError>
     where
         E::Data: 'static + Send,
     {
@@ -334,7 +420,7 @@ where
     pub async fn enqueue_to_backend<B: Backend + ?Sized>(
         self,
         backend: &B,
-    ) -> Result<JobId, RexecuterError>
+    ) -> Result<JobId, RexecutorError>
     where
         E::Data: 'static + Send,
     {
@@ -348,9 +434,69 @@ where
     /// Enqueue this job to the global backend.
     ///
     /// To make use this API and the global backend, [`crate::Rexecutor::set_global_backend`]
-    /// should be called. If this hasn't been called, then a [`RexecuterError::GlobalBackend`]
+    /// should be called. If this hasn't been called, then a [`RexecutorError::GlobalBackend`]
     /// will be returned.
-    pub async fn enqueue(self) -> Result<JobId, RexecuterError>
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// # use rexecutor::prelude::*;
+    /// # use chrono::{Utc, TimeDelta};
+    /// # use rexecutor::backend::memory::InMemoryBackend;
+    /// # use rexecutor::RexecutorError;
+    /// # use rexecutor::assert_enqueued;
+    /// # pub(crate) struct ExampleExecutor;
+    /// #
+    /// # #[async_trait::async_trait]
+    /// # impl Executor for ExampleExecutor {
+    /// #     type Data = String;
+    /// #     type Metadata = String;
+    /// #     const NAME: &'static str = "simple_executor";
+    /// #     const MAX_ATTEMPTS: u16 = 2;
+    /// #     async fn execute(_job: Job<Self::Data, Self::Metadata>) -> ExecutionResult {
+    /// #         ExecutionResult::Done
+    /// #     }
+    /// # }
+    /// # tokio::runtime::Builder::new_current_thread().build().unwrap().block_on(async {
+    /// // If we have not set the global backend, we get an error.
+    /// let result = ExampleExecutor::builder()
+    ///     .with_max_attempts(2)
+    ///     .with_priority(2)
+    ///     .add_tag("initial_job")
+    ///     .with_data("First job".into())
+    ///     .with_metadata("550e8400-e29b-41d4-a716-446655440000".into())
+    ///     .schedule_at(Utc::now())
+    ///     .enqueue()
+    ///     .await;
+    ///
+    /// assert!(matches!(result, Err(RexecutorError::GlobalBackend)));
+    ///
+    /// // When we set the global backend, we can enqueue to it.
+    /// let backend = InMemoryBackend::new().paused();
+    /// Rexecutor::new(backend).set_global_backend().unwrap();
+    ///
+    /// ExampleExecutor::builder()
+    ///     .with_max_attempts(2)
+    ///     .with_priority(2)
+    ///     .add_tag("initial_job")
+    ///     .with_data("First job".into())
+    ///     .with_metadata("550e8400-e29b-41d4-a716-446655440000".into())
+    ///     .schedule_at(Utc::now())
+    ///     .enqueue()
+    ///     .await
+    ///     .unwrap();
+    ///
+    /// assert_enqueued!(
+    ///     with_data: "First job".to_owned(),
+    ///     with_metadata: "550e8400-e29b-41d4-a716-446655440000".to_owned(),
+    ///     tagged_with: ["initial_job"],
+    ///     scheduled_after: Utc::now() - TimeDelta::minutes(1),
+    ///     scheduled_before: Utc::now(),
+    ///     for_executor: ExampleExecutor
+    /// );
+    /// # });
+    /// ```
+    pub async fn enqueue(self) -> Result<JobId, RexecutorError>
     where
         E::Data: 'static + Send,
     {
@@ -361,7 +507,7 @@ where
     pub async fn enqueue_to_backend<B: Backend + ?Sized>(
         self,
         backend: &B,
-    ) -> Result<JobId, RexecuterError>
+    ) -> Result<JobId, RexecutorError>
     where
         E::Data: 'static + Send,
     {

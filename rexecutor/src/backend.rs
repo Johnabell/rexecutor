@@ -402,6 +402,7 @@ pub enum BackendError {
     /// The backend in an inconsistent state.
     #[error("System in bad state")]
     BadState,
+    /// No jobs was found matching the criteria provided.
     #[error("Job not found: {0}")]
     JobNotFound(JobId),
 }

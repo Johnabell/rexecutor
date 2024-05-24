@@ -174,7 +174,6 @@ pub enum Resolution<'a> {
 ///
 /// ```
 /// # use rexecutor::prelude::*;
-///
 /// let replace = Replace::data()
 ///     .and_metadata()
 ///     .and_priority()
@@ -216,7 +215,6 @@ impl<'a> Replace<'a> {
     ///
     /// ```
     /// # use rexecutor::prelude::*;
-    ///
     /// let replace = Replace::scheduled_at();
     ///
     /// assert!(replace.scheduled_at);
@@ -244,7 +242,6 @@ impl<'a> Replace<'a> {
     ///
     /// ```
     /// # use rexecutor::prelude::*;
-    ///
     /// let replace = Replace::data();
     ///
     /// assert!(!replace.scheduled_at);
@@ -272,7 +269,6 @@ impl<'a> Replace<'a> {
     ///
     /// ```
     /// # use rexecutor::prelude::*;
-    ///
     /// let replace = Replace::metadata();
     ///
     /// assert!(!replace.scheduled_at);
@@ -300,7 +296,6 @@ impl<'a> Replace<'a> {
     ///
     /// ```
     /// # use rexecutor::prelude::*;
-    ///
     /// let replace = Replace::priority();
     ///
     /// assert!(!replace.scheduled_at);
@@ -328,7 +323,6 @@ impl<'a> Replace<'a> {
     ///
     /// ```
     /// # use rexecutor::prelude::*;
-    ///
     /// let replace = Replace::max_attempts();
     ///
     /// assert!(!replace.scheduled_at);
@@ -377,7 +371,6 @@ impl<'a> Replace<'a> {
     ///
     /// ```
     /// # use rexecutor::prelude::*;
-    ///
     /// let replace = Replace::max_attempts().and_data();
     ///
     /// assert!(!replace.scheduled_at);
@@ -398,7 +391,6 @@ impl<'a> Replace<'a> {
     ///
     /// ```
     /// # use rexecutor::prelude::*;
-    ///
     /// let replace = Replace::max_attempts().and_metadata();
     ///
     /// assert!(!replace.scheduled_at);
@@ -419,7 +411,6 @@ impl<'a> Replace<'a> {
     ///
     /// ```
     /// # use rexecutor::prelude::*;
-    ///
     /// let replace = Replace::max_attempts().and_priority();
     ///
     /// assert!(!replace.scheduled_at);
@@ -440,7 +431,6 @@ impl<'a> Replace<'a> {
     ///
     /// ```
     /// # use rexecutor::prelude::*;
-    ///
     /// let replace = Replace::scheduled_at().and_max_attempts();
     ///
     /// assert!(replace.scheduled_at);
@@ -462,7 +452,6 @@ impl<'a> Replace<'a> {
     ///
     /// ```
     /// # use rexecutor::prelude::*;
-    ///
     /// let replace = Replace::scheduled_at()
     ///     .and_data()
     ///     .and_metadata()
@@ -495,7 +484,6 @@ impl<'a> UniquenessCriteria<'a> {
     /// ```
     /// # use rexecutor::prelude::*;
     /// # use rexecutor::job::uniqueness_criteria::Resolution;
-    ///
     /// let uniqueness_criteria = UniquenessCriteria::by_executor();
     ///
     /// assert!(uniqueness_criteria.executor);
@@ -525,7 +513,6 @@ impl<'a> UniquenessCriteria<'a> {
     /// # use rexecutor::prelude::*;
     /// # use rexecutor::job::uniqueness_criteria::Resolution;
     /// # use chrono::TimeDelta;
-    ///
     /// let uniqueness_criteria = UniquenessCriteria::within(TimeDelta::seconds(60));
     ///
     /// assert!(!uniqueness_criteria.executor);
@@ -552,7 +539,6 @@ impl<'a> UniquenessCriteria<'a> {
     /// ```
     /// # use rexecutor::prelude::*;
     /// # use rexecutor::job::uniqueness_criteria::Resolution;
-    ///
     /// let uniqueness_criteria = UniquenessCriteria::by_statuses(&[JobStatus::Scheduled]);
     ///
     /// assert!(!uniqueness_criteria.executor);
@@ -581,7 +567,6 @@ impl<'a> UniquenessCriteria<'a> {
     /// ```
     /// # use rexecutor::prelude::*;
     /// # use rexecutor::job::uniqueness_criteria::Resolution;
-    ///
     /// let uniqueness_criteria = UniquenessCriteria::by_key(&"Some hashable value");
     ///
     /// assert!(!uniqueness_criteria.executor);
@@ -609,7 +594,6 @@ impl<'a> UniquenessCriteria<'a> {
     /// ```
     /// # use rexecutor::prelude::*;
     /// # use rexecutor::job::uniqueness_criteria::Resolution;
-    ///
     /// let uniqueness_criteria = UniquenessCriteria::by_key(
     ///     &"Some hashable
     /// value",
@@ -636,7 +620,6 @@ impl<'a> UniquenessCriteria<'a> {
     /// # use rexecutor::prelude::*;
     /// # use rexecutor::job::uniqueness_criteria::Resolution;
     /// # use chrono::TimeDelta;
-    ///
     /// let uniqueness_criteria = UniquenessCriteria::by_key(
     ///     &"Some hashable
     /// value",
@@ -662,7 +645,6 @@ impl<'a> UniquenessCriteria<'a> {
     /// ```
     /// # use rexecutor::prelude::*;
     /// # use rexecutor::job::uniqueness_criteria::Resolution;
-    ///
     /// let uniqueness_criteria = UniquenessCriteria::by_key(
     ///     &"Some hashable
     /// value",
@@ -688,7 +670,6 @@ impl<'a> UniquenessCriteria<'a> {
     /// ```
     /// # use rexecutor::prelude::*;
     /// # use rexecutor::job::uniqueness_criteria::Resolution;
-    ///
     /// let uniqueness_criteria = UniquenessCriteria::by_executor().and_key(&10985109);
     ///
     /// assert!(uniqueness_criteria.executor);
@@ -711,7 +692,6 @@ impl<'a> UniquenessCriteria<'a> {
     /// ```
     /// # use rexecutor::prelude::*;
     /// # use rexecutor::job::uniqueness_criteria::Resolution;
-    ///
     /// let uniqueness_criteria = UniquenessCriteria::by_executor()
     ///     .and_key(&10985109)
     ///     .on_conflict(Replace::data());
@@ -741,7 +721,6 @@ impl<'a> UniquenessCriteria<'a> {
     /// ```
     /// # use rexecutor::prelude::*;
     /// # use rexecutor::job::uniqueness_criteria::Resolution;
-    ///
     /// let uniqueness_criteria = UniquenessCriteria::by_executor()
     ///     .and_key(&10985109)
     ///     .on_conflict_do_nothing();
