@@ -8,6 +8,7 @@ pub mod global_backend;
 pub mod job;
 pub mod prelude;
 pub mod pruner;
+pub mod testing;
 
 use backend::{Backend, BackendError};
 use chrono::{TimeZone, Utc};

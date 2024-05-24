@@ -173,7 +173,12 @@ impl InMemoryBackend {
     ///
     /// assert_eq!(
     ///     backend.get_job(job_id),
-    ///     backend.query(Query::IdEquals(job_id)).await.unwrap().into_iter().next()
+    ///     backend
+    ///         .query(Query::IdEquals(job_id))
+    ///         .await
+    ///         .unwrap()
+    ///         .into_iter()
+    ///         .next()
     /// );
     /// # });
     /// ```
