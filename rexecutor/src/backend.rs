@@ -192,7 +192,7 @@ pub struct ExecutionError {
 }
 
 /// The details required to enqueue a job.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Eq, PartialEq)]
 pub struct EnqueuableJob<'a> {
     /// The name of the executor which is responsible for running this job.
     ///
@@ -405,6 +405,7 @@ pub enum BackendError {
     /// No jobs was found matching the criteria provided.
     #[error("Job not found: {0}")]
     JobNotFound(JobId),
+    // TODO do we need some sort of IO error here
 }
 
 #[cfg(test)]
@@ -655,6 +656,60 @@ pub(crate) mod test {
         backend.expect_query().return_once(|_| Ok(vec![]));
 
         let smart_pointer_backend = Arc::new(backend);
+
+        assert!(smart_pointer_backend.rerun_job(42.into()).await.is_ok());
+        assert!(smart_pointer_backend.update_job(job).await.is_ok());
+        assert!(smart_pointer_backend
+            .query(Query::ExecutorEqual(""))
+            .await
+            .is_ok());
+    }
+
+    #[tokio::test]
+    async fn box_backend() {
+        let mut backend = MockBackend::default();
+        let job = Job::mock_job::<SimpleExecutor>();
+        backend.expect_rerun_job().return_once(|_| Ok(()));
+        backend.expect_update_job().return_once(|_| Ok(()));
+        backend.expect_query().return_once(|_| Ok(vec![]));
+
+        let smart_pointer_backend = Box::new(backend);
+
+        assert!(smart_pointer_backend.rerun_job(42.into()).await.is_ok());
+        assert!(smart_pointer_backend.update_job(job).await.is_ok());
+        assert!(smart_pointer_backend
+            .query(Query::ExecutorEqual(""))
+            .await
+            .is_ok());
+    }
+
+    #[tokio::test]
+    async fn reference_backend() {
+        let mut backend = MockBackend::default();
+        let job = Job::mock_job::<SimpleExecutor>();
+        backend.expect_rerun_job().return_once(|_| Ok(()));
+        backend.expect_update_job().return_once(|_| Ok(()));
+        backend.expect_query().return_once(|_| Ok(vec![]));
+
+        let smart_pointer_backend = &backend;
+
+        assert!(smart_pointer_backend.rerun_job(42.into()).await.is_ok());
+        assert!(smart_pointer_backend.update_job(job).await.is_ok());
+        assert!(smart_pointer_backend
+            .query(Query::ExecutorEqual(""))
+            .await
+            .is_ok());
+    }
+
+    #[tokio::test]
+    async fn mut_reference_backend() {
+        let mut backend = MockBackend::default();
+        let job = Job::mock_job::<SimpleExecutor>();
+        backend.expect_rerun_job().return_once(|_| Ok(()));
+        backend.expect_update_job().return_once(|_| Ok(()));
+        backend.expect_query().return_once(|_| Ok(vec![]));
+
+        let smart_pointer_backend = &mut backend;
 
         assert!(smart_pointer_backend.rerun_job(42.into()).await.is_ok());
         assert!(smart_pointer_backend.update_job(job).await.is_ok());
