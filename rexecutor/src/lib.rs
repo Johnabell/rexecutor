@@ -1,7 +1,5 @@
 //! A robust job processing library for rust.
 //!
-//!
-//!
 //! # Setting up `Rexecutor`
 //!
 //! To create an instance of [`Rexecutor`] you will need to have an implementation of [`Backend`].

@@ -24,6 +24,7 @@ use crate::{
 
 pub mod memory;
 pub(crate) mod queryable;
+pub mod testing;
 
 /// The trait which need to be implemented to create a backend for rexecutor.
 ///
@@ -415,56 +416,8 @@ pub(crate) mod test {
     use assert_matches::assert_matches;
     use chrono::TimeDelta;
     use std::sync::Arc;
-    const DEFAULT_EXECUTOR: &str = "executor";
-
-    impl<'a> EnqueuableJob<'a> {
-        pub(crate) const DEFAULT_EXECUTOR: &'static str = DEFAULT_EXECUTOR;
-
-        pub(crate) fn mock_job() -> Self {
-            Self {
-                executor: Self::DEFAULT_EXECUTOR.to_owned(),
-                data: serde_json::Value::String("data".to_owned()),
-                metadata: serde_json::Value::String("metadata".to_owned()),
-                max_attempts: 5,
-                scheduled_at: Utc::now(),
-                tags: Default::default(),
-                priority: 0,
-                uniqueness_criteria: None,
-            }
-        }
-
-        pub(crate) fn with_executor(self, executor: impl ToString) -> Self {
-            Self {
-                executor: executor.to_string(),
-                ..self
-            }
-        }
-
-        pub(crate) fn with_priority(self, priority: u16) -> Self {
-            Self { priority, ..self }
-        }
-
-        pub(crate) fn with_scheduled_at(self, scheduled_at: DateTime<Utc>) -> Self {
-            Self {
-                scheduled_at,
-                ..self
-            }
-        }
-
-        pub(crate) fn with_uniqueness_criteria(
-            self,
-            uniqueness_criteria: Option<UniquenessCriteria<'a>>,
-        ) -> Self {
-            Self {
-                uniqueness_criteria,
-                ..self
-            }
-        }
-    }
 
     impl Job {
-        pub(crate) const DEFAULT_EXECUTOR: &'static str = DEFAULT_EXECUTOR;
-
         pub(crate) fn mock_job<T: Executor>() -> Self {
             let now = Utc::now();
             Self {
@@ -486,30 +439,6 @@ pub(crate) mod test {
                 discarded_at: None,
             }
         }
-        pub(crate) fn raw_job() -> Self {
-            let now = Utc::now();
-            Self {
-                id: 0,
-                executor: Self::DEFAULT_EXECUTOR.to_owned(),
-                status: JobStatus::Scheduled,
-                data: serde_json::Value::Null,
-                metadata: serde_json::Value::Null,
-                attempt: 0,
-                max_attempts: 3,
-                priority: 0,
-                tags: vec![],
-                errors: vec![],
-                inserted_at: now,
-                scheduled_at: now + TimeDelta::hours(2),
-                attempted_at: None,
-                completed_at: None,
-                cancelled_at: None,
-                discarded_at: None,
-            }
-        }
-    }
-
-    impl Job {
         pub(crate) fn with_data<D>(self, data: D) -> Self
         where
             D: Serialize,

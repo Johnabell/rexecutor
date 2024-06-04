@@ -94,12 +94,6 @@ pub(super) struct KeyedJob {
     pub(super) key: Option<i64>,
 }
 
-impl KeyedJob {
-    fn job(&self) -> Job {
-        self.job.clone()
-    }
-}
-
 impl std::ops::Deref for KeyedJob {
     type Target = Job;
 
@@ -145,46 +139,6 @@ impl InMemoryBackend {
                 })
             });
         Ok(())
-    }
-
-    /// A helper function for getting a job from an ID.
-    ///
-    /// This could be implemented as using [`Query`] as follows:
-    ///
-    /// ```
-    /// # use rexecutor::prelude::*;
-    /// # use rexecutor::backend::{Backend, Query, EnqueuableJob, memory::InMemoryBackend};
-    /// # use chrono::Utc;
-    /// let backend = InMemoryBackend::default();
-    ///
-    /// let job = EnqueuableJob {
-    ///     executor: "executor".to_owned(),
-    ///     data: serde_json::Value::String("data".to_owned()),
-    ///     metadata: serde_json::Value::String("metadata".to_owned()),
-    ///     max_attempts: 5,
-    ///     scheduled_at: Utc::now(),
-    ///     tags: Default::default(),
-    ///     priority: 0,
-    ///     uniqueness_criteria: None,
-    /// };
-    ///
-    /// # tokio::runtime::Builder::new_current_thread().build().unwrap().block_on(async {
-    /// let job_id = backend.enqueue(job).await.unwrap();
-    ///
-    /// assert_eq!(
-    ///     backend.get_job(job_id),
-    ///     backend
-    ///         .query(Query::IdEquals(job_id))
-    ///         .await
-    ///         .unwrap()
-    ///         .into_iter()
-    ///         .next()
-    /// );
-    /// # });
-    /// ```
-    pub fn get_job(&self, id: JobId) -> Option<Job> {
-        let jobs = self.jobs.read().unwrap();
-        jobs.get(i32::from(id) as usize).map(KeyedJob::job)
     }
 
     async fn next_available_job_scheduled_at_for_executor(
@@ -434,7 +388,7 @@ impl Backend for InMemoryBackend {
     }
     async fn mark_job_complete(&self, id: JobId) -> Result<(), BackendError> {
         let mut jobs = self.jobs.write().map_err(|_| BackendError::BadState)?;
-        match jobs.iter_mut().find(|job| job.id == i32::from(id)) {
+        match jobs.iter_mut().find(|job| job.id == id) {
             None => Err(BackendError::JobNotFound(id)),
             Some(job) => {
                 job.mark_job_complete();
@@ -449,7 +403,7 @@ impl Backend for InMemoryBackend {
         error: ExecutionError,
     ) -> Result<(), BackendError> {
         let mut jobs = self.jobs.write().map_err(|_| BackendError::BadState)?;
-        match jobs.iter_mut().find(|job| job.id == i32::from(id)) {
+        match jobs.iter_mut().find(|job| job.id == id) {
             None => Err(BackendError::JobNotFound(id)),
             Some(job) => {
                 job.mark_job_retryable(next_scheduled_at, error);
@@ -464,7 +418,7 @@ impl Backend for InMemoryBackend {
         error: ExecutionError,
     ) -> Result<(), BackendError> {
         let mut jobs = self.jobs.write().map_err(|_| BackendError::BadState)?;
-        match jobs.iter_mut().find(|job| job.id == i32::from(id)) {
+        match jobs.iter_mut().find(|job| job.id == id) {
             None => Err(BackendError::JobNotFound(id)),
             Some(job) => {
                 job.mark_job_discarded(error);
@@ -478,7 +432,7 @@ impl Backend for InMemoryBackend {
         error: ExecutionError,
     ) -> Result<(), BackendError> {
         let mut jobs = self.jobs.write().map_err(|_| BackendError::BadState)?;
-        match jobs.iter_mut().find(|job| job.id == i32::from(id)) {
+        match jobs.iter_mut().find(|job| job.id == id) {
             None => Err(BackendError::JobNotFound(id)),
             Some(job) => {
                 job.mark_job_cancelled(error);
@@ -492,7 +446,7 @@ impl Backend for InMemoryBackend {
         next_scheduled_at: DateTime<Utc>,
     ) -> Result<(), BackendError> {
         let mut jobs = self.jobs.write().map_err(|_| BackendError::BadState)?;
-        match jobs.iter_mut().find(|job| job.id == i32::from(id)) {
+        match jobs.iter_mut().find(|job| job.id == id) {
             None => Err(BackendError::JobNotFound(id)),
             Some(job) => {
                 job.mark_job_snoozed(next_scheduled_at);
@@ -530,7 +484,7 @@ impl Backend for InMemoryBackend {
     }
     async fn rerun_job(&self, id: JobId) -> Result<(), BackendError> {
         let mut jobs = self.jobs.write().map_err(|_| BackendError::BadState)?;
-        match jobs.iter_mut().find(|job| job.id == i32::from(id)) {
+        match jobs.iter_mut().find(|job| job.id == id) {
             None => Err(BackendError::JobNotFound(id)),
             Some(job) => {
                 job.mark_job_rerunable();
@@ -563,10 +517,7 @@ impl Backend for InMemoryBackend {
 pub(super) mod test {
     use std::{ops::Add, time::Duration};
 
-    use crate::{
-        job::{uniqueness_criteria::Replace, ErrorType},
-        pruner::Spec,
-    };
+    use crate::{job::ErrorType, pruner::Spec, test_suite};
     use futures::StreamExt;
 
     use super::*;
@@ -602,61 +553,7 @@ pub(super) mod test {
         }
     }
 
-    impl InMemoryBackend {
-        async fn set_job_attempt(&self, id: JobId, attempt: i32) {
-            let mut job = self.get_job(id).unwrap();
-            job.attempt = attempt;
-            self.update_job(job).await.unwrap();
-        }
-        async fn set_job_status(&self, id: JobId, job_status: JobStatus) {
-            let mut job = self.get_job(id).unwrap();
-            job.status = job_status;
-            self.update_job(job).await.unwrap();
-        }
-    }
-
-    #[tokio::test]
-    async fn subscribe_ready_jobs() {
-        let executor = "executor";
-        let backend = InMemoryBackend::new();
-        let mut stream = backend.subscribe_ready_jobs(executor.into()).await;
-        backend
-            .enqueue(EnqueuableJob::mock_job().with_executor("another_executor"))
-            .await
-            .unwrap();
-        let job_id = backend
-            .enqueue(EnqueuableJob::mock_job().with_executor(executor))
-            .await
-            .unwrap();
-
-        let job = stream.next().await.unwrap().unwrap();
-        assert_eq!(job.id, i32::from(job_id));
-        assert_eq!(job.executor, executor);
-    }
-
-    #[tokio::test]
-    async fn subscribe_ready_jobs_enqueuing_wakes_subscriber() {
-        let executor = "executor";
-        let backend = InMemoryBackend::new();
-        let mut stream = backend.subscribe_ready_jobs(executor.into()).await;
-        let handle = tokio::spawn(async move {
-            match tokio::time::timeout(Duration::from_secs(2), stream.next()).await {
-                Ok(Some(Ok(job))) => assert_eq!(job.executor, executor),
-                Err(_) => panic!("Didn't get woken by enqueue of new job"),
-                _ => panic!("Bad things happened"),
-            }
-        });
-        tokio::task::yield_now().await;
-        backend
-            .enqueue(EnqueuableJob::mock_job().with_executor("another_executor"))
-            .await
-            .unwrap();
-        backend
-            .enqueue(EnqueuableJob::mock_job().with_executor(executor))
-            .await
-            .unwrap();
-        handle.await.unwrap();
-    }
+    test_suite!(for: InMemoryBackend::new());
 
     #[tokio::test]
     async fn subscribe_ready_jobs_enqueuing_does_not_wakes_subscriber_when_paused() {
@@ -705,481 +602,6 @@ pub(super) mod test {
             .unwrap();
         backend.notify_all().unwrap();
         handle.await.unwrap();
-    }
-
-    #[tokio::test]
-    async fn subscribe_ready_jobs_streams_jobs_by_priority() {
-        let executor = "executor";
-        let scheduled_at1 = Utc::now();
-        let scheduled_at2 = Utc::now() + TimeDelta::milliseconds(10);
-        let backend = InMemoryBackend::new();
-        let mut stream = backend.subscribe_ready_jobs(executor.into()).await;
-        let job_id1 = backend
-            .enqueue(
-                EnqueuableJob::mock_job()
-                    .with_executor(executor)
-                    .with_scheduled_at(scheduled_at2),
-            )
-            .await
-            .unwrap();
-        let job_id2 = backend
-            .enqueue(
-                EnqueuableJob::mock_job()
-                    .with_executor(executor)
-                    .with_priority(2)
-                    .with_scheduled_at(scheduled_at1),
-            )
-            .await
-            .unwrap();
-        let job_id3 = backend
-            .enqueue(
-                EnqueuableJob::mock_job()
-                    .with_executor(executor)
-                    .with_scheduled_at(scheduled_at1),
-            )
-            .await
-            .unwrap();
-
-        let job_ids: [JobId; 3] = [
-            stream.next().await.unwrap().unwrap().id.into(),
-            stream.next().await.unwrap().unwrap().id.into(),
-            stream.next().await.unwrap().unwrap().id.into(),
-        ];
-        assert_eq!(job_ids, [job_id3, job_id2, job_id1]);
-    }
-
-    #[tokio::test]
-    async fn subscribe_ready_jobs_streams_only_one_steam_receives_job() {
-        let executor = "executor";
-        let backend = InMemoryBackend::new();
-        let mut stream1 = backend.subscribe_ready_jobs(executor.into()).await;
-        let mut stream2 = backend.subscribe_ready_jobs(executor.into()).await;
-        let job_id1 = backend
-            .enqueue(EnqueuableJob::mock_job().with_executor(executor))
-            .await
-            .unwrap();
-        let job_id2 = backend
-            .enqueue(EnqueuableJob::mock_job().with_executor(executor))
-            .await
-            .unwrap();
-
-        let job_ids: std::collections::HashSet<_> =
-            futures::future::join_all([stream1.next(), stream2.next()])
-                .await
-                .into_iter()
-                .map(|res| res.unwrap().unwrap().id)
-                .collect();
-        let expected = [i32::from(job_id1), i32::from(job_id2)]
-            .into_iter()
-            .collect();
-        assert_eq!(job_ids, expected);
-    }
-
-    #[tokio::test]
-    async fn enqueue() {
-        let backend = InMemoryBackend::new();
-
-        let id1 = backend.enqueue(EnqueuableJob::mock_job()).await.unwrap();
-        let id2 = backend.enqueue(EnqueuableJob::mock_job()).await.unwrap();
-
-        assert_eq!(id1, 0.into());
-        assert_eq!(id2, 1.into());
-        assert!(backend.get_job(id1).is_some());
-        assert!(backend.get_job(id2).is_some());
-    }
-
-    #[tokio::test]
-    async fn enqueue_unique() {
-        let backend = InMemoryBackend::new();
-
-        let id1 = backend.enqueue(EnqueuableJob::mock_job()).await.unwrap();
-        let id2 = backend
-            .enqueue(EnqueuableJob::mock_job().with_uniqueness_criteria(Some(
-                UniquenessCriteria::by_executor().and_within(TimeDelta::minutes(2)),
-            )))
-            .await
-            .unwrap();
-
-        assert_eq!(id1, 0.into());
-        assert_eq!(id2, id1);
-        assert!(backend.get_job(id2).is_some());
-    }
-
-    #[tokio::test]
-    async fn enqueue_unique_no_matching() {
-        let backend = InMemoryBackend::new();
-
-        let id1 = backend.enqueue(EnqueuableJob::mock_job()).await.unwrap();
-        let id2 = backend
-            .enqueue(
-                EnqueuableJob::mock_job().with_uniqueness_criteria(Some(
-                    UniquenessCriteria::by_statuses(&[JobStatus::Retryable])
-                        .and_within(TimeDelta::minutes(2)),
-                )),
-            )
-            .await
-            .unwrap();
-
-        assert_eq!(id1, 0.into());
-        assert_eq!(id2, 1.into());
-        assert!(backend.get_job(id1).is_some());
-        assert!(backend.get_job(id2).is_some());
-    }
-
-    #[tokio::test]
-    async fn enqueue_unique_replace() {
-        let backend = InMemoryBackend::new();
-
-        let id1 = backend
-            .enqueue(EnqueuableJob::mock_job().with_priority(2))
-            .await
-            .unwrap();
-        let id2 = backend
-            .enqueue(
-                EnqueuableJob::mock_job().with_uniqueness_criteria(Some(
-                    UniquenessCriteria::by_executor()
-                        .and_within(TimeDelta::minutes(2))
-                        .on_conflict(
-                            Replace::priority()
-                                .and_data()
-                                .and_metadata()
-                                .and_scheduled_at()
-                                .and_max_attempts(),
-                        ),
-                )),
-            )
-            .await
-            .unwrap();
-
-        assert_eq!(id1, 0.into());
-        assert_eq!(id2, id1);
-        let job = backend.get_job(id1).expect("Job should be enqueued");
-        // Priority has been updated
-        assert_eq!(job.priority, 0);
-    }
-
-    #[tokio::test]
-    async fn update_job() {
-        let backend = InMemoryBackend::new();
-        let id = backend.enqueue(EnqueuableJob::mock_job()).await.unwrap();
-        let mut job = backend.get_job(id).unwrap();
-        job.attempt = 3;
-
-        assert!(backend.update_job(job).await.is_ok());
-
-        let job = backend.get_job(id).unwrap();
-        assert_eq!(job.attempt, 3);
-    }
-
-    #[tokio::test]
-    async fn update_job_not_found() {
-        let job = Job::raw_job();
-        assert_matches!(
-            InMemoryBackend::new().update_job(job).await,
-            Err(BackendError::JobNotFound(_))
-        );
-    }
-
-    #[tokio::test]
-    async fn mark_job_complete() {
-        let backend = InMemoryBackend::new();
-        let id = backend.enqueue(EnqueuableJob::mock_job()).await.unwrap();
-
-        assert!(backend.mark_job_complete(id).await.is_ok());
-        assert_eq!(backend.get_job(id).unwrap().status, JobStatus::Complete);
-    }
-
-    #[tokio::test]
-    async fn mark_job_complete_not_found() {
-        assert_matches!(
-            InMemoryBackend::new().mark_job_complete(42.into()).await,
-            Err(BackendError::JobNotFound(_))
-        );
-    }
-
-    #[tokio::test]
-    async fn rerun_job_first_attempt() {
-        let backend = InMemoryBackend::new();
-        let job = EnqueuableJob::mock_job();
-        let original_max_attempts = job.max_attempts as i32;
-        let id = backend.enqueue(job).await.unwrap();
-        backend.set_job_attempt(id, 1).await;
-
-        assert!(backend.rerun_job(id).await.is_ok());
-
-        let job = backend.get_job(id).unwrap();
-        assert_eq!(job.status, JobStatus::Scheduled);
-        assert_eq!(job.attempt, 1);
-        assert_eq!(job.max_attempts, original_max_attempts + 1);
-        assert!(job.completed_at.is_none());
-        assert!(job.cancelled_at.is_none());
-        assert!(job.discarded_at.is_none());
-    }
-
-    #[tokio::test]
-    async fn rerun_job_first_subsequent_attempt() {
-        let backend = InMemoryBackend::new();
-        let job = EnqueuableJob::mock_job();
-        let original_max_attempts = job.max_attempts as i32;
-        let id = backend.enqueue(job).await.unwrap();
-        backend.set_job_attempt(id, 2).await;
-
-        assert!(backend.rerun_job(id).await.is_ok());
-
-        let job = backend.get_job(id).unwrap();
-        assert_eq!(job.status, JobStatus::Retryable);
-        assert_eq!(job.attempt, 2);
-        assert_eq!(job.max_attempts, original_max_attempts + 1);
-        assert!(job.completed_at.is_none());
-        assert!(job.cancelled_at.is_none());
-        assert!(job.discarded_at.is_none());
-    }
-
-    #[tokio::test]
-    async fn rerun_job_not_found() {
-        assert_matches!(
-            InMemoryBackend::new().rerun_job(42.into()).await,
-            Err(BackendError::JobNotFound(_))
-        );
-    }
-
-    #[tokio::test]
-    async fn mark_job_snoozed_first_attempt() {
-        let scheduled_at = Utc::now().add(TimeDelta::days(1));
-        let backend = InMemoryBackend::new();
-        let id = backend.enqueue(EnqueuableJob::mock_job()).await.unwrap();
-        backend.set_job_attempt(id, 1).await;
-
-        assert!(backend.mark_job_snoozed(id, scheduled_at).await.is_ok());
-
-        let job = backend.get_job(id).unwrap();
-        assert_eq!(job.status, JobStatus::Scheduled);
-        assert_eq!(job.attempt, 0);
-        assert_eq!(job.scheduled_at, scheduled_at);
-    }
-
-    #[tokio::test]
-    async fn mark_job_snoozed_other_attempt() {
-        let scheduled_at = Utc::now().add(TimeDelta::days(1));
-        let backend = InMemoryBackend::new();
-        let id = backend.enqueue(EnqueuableJob::mock_job()).await.unwrap();
-        backend.set_job_attempt(id, 2).await;
-
-        assert!(backend.mark_job_snoozed(id, scheduled_at).await.is_ok());
-
-        let job = backend.get_job(id).unwrap();
-        assert_eq!(job.status, JobStatus::Retryable);
-        assert_eq!(job.attempt, 1);
-        assert_eq!(job.scheduled_at, scheduled_at);
-    }
-
-    #[tokio::test]
-    async fn mark_job_snoozed_not_found() {
-        let scheduled_at = Utc::now().add(TimeDelta::days(1));
-        assert_matches!(
-            InMemoryBackend::new()
-                .mark_job_snoozed(42.into(), scheduled_at)
-                .await,
-            Err(BackendError::JobNotFound(_))
-        );
-    }
-
-    #[tokio::test]
-    async fn mark_job_discarded() {
-        let backend = InMemoryBackend::new();
-        let id = backend.enqueue(EnqueuableJob::mock_job()).await.unwrap();
-        let error = ExecutionError {
-            error_type: ErrorType::Other("custom".to_owned()),
-            message: "Error Message".to_owned(),
-        };
-
-        assert!(backend.mark_job_discarded(id, error.clone()).await.is_ok());
-
-        let job = backend.get_job(id).unwrap();
-        assert_eq!(job.status, JobStatus::Discarded);
-        assert_eq!(job.errors.len(), 1);
-
-        let job_error = job.errors.first().unwrap();
-        assert_eq!(job_error.attempt as i32, job.attempt);
-        assert_eq!(job_error.error_type, error.error_type);
-        assert_eq!(job_error.details, error.message);
-    }
-
-    #[tokio::test]
-    async fn mark_job_discarded_not_found() {
-        let error = ExecutionError {
-            error_type: ErrorType::Other("custom".to_owned()),
-            message: "Error Message".to_owned(),
-        };
-        assert_matches!(
-            InMemoryBackend::new()
-                .mark_job_discarded(42.into(), error)
-                .await,
-            Err(BackendError::JobNotFound(_))
-        );
-    }
-
-    #[tokio::test]
-    async fn mark_job_retryable() {
-        let scheduled_at = Utc::now().add(TimeDelta::days(1));
-        let backend = InMemoryBackend::new();
-        let id = backend.enqueue(EnqueuableJob::mock_job()).await.unwrap();
-        let error = ExecutionError {
-            error_type: ErrorType::Other("custom".to_owned()),
-            message: "Error Message".to_owned(),
-        };
-
-        assert!(backend
-            .mark_job_retryable(id, scheduled_at, error.clone())
-            .await
-            .is_ok());
-
-        let job = backend.get_job(id).unwrap();
-        assert_eq!(job.status, JobStatus::Retryable);
-        assert_eq!(job.errors.len(), 1);
-
-        let job_error = job.errors.first().unwrap();
-        assert_eq!(job_error.attempt as i32, job.attempt);
-        assert_eq!(job_error.error_type, error.error_type);
-        assert_eq!(job_error.details, error.message);
-    }
-
-    #[tokio::test]
-    async fn mark_job_retryable_not_found() {
-        let scheduled_at = Utc::now().add(TimeDelta::days(1));
-        let error = ExecutionError {
-            error_type: ErrorType::Other("custom".to_owned()),
-            message: "Error Message".to_owned(),
-        };
-        assert_matches!(
-            InMemoryBackend::new()
-                .mark_job_retryable(42.into(), scheduled_at, error)
-                .await,
-            Err(BackendError::JobNotFound(_))
-        );
-    }
-
-    #[tokio::test]
-    async fn mark_job_cancelled() {
-        let backend = InMemoryBackend::new();
-        let id = backend.enqueue(EnqueuableJob::mock_job()).await.unwrap();
-        let error = ExecutionError {
-            error_type: ErrorType::Other("custom".to_owned()),
-            message: "Error Message".to_owned(),
-        };
-
-        assert!(backend.mark_job_cancelled(id, error.clone()).await.is_ok());
-
-        let job = backend.get_job(id).unwrap();
-        assert_eq!(job.status, JobStatus::Cancelled);
-        assert_eq!(job.errors.len(), 1);
-
-        let job_error = job.errors.first().unwrap();
-        assert_eq!(job_error.attempt as i32, job.attempt);
-        assert_eq!(job_error.error_type, error.error_type);
-        assert_eq!(job_error.details, error.message);
-    }
-
-    #[tokio::test]
-    async fn mark_job_cancelled_not_found() {
-        let error = ExecutionError {
-            error_type: ErrorType::Other("custom".to_owned()),
-            message: "Error Message".to_owned(),
-        };
-        assert_matches!(
-            InMemoryBackend::new()
-                .mark_job_cancelled(42.into(), error)
-                .await,
-            Err(BackendError::JobNotFound(_))
-        );
-    }
-
-    #[tokio::test]
-    async fn query() {
-        let backend = InMemoryBackend::new();
-        let id = backend.enqueue(EnqueuableJob::mock_job()).await.unwrap();
-        let _ = backend
-            .enqueue(EnqueuableJob::mock_job().with_executor("other_executor"))
-            .await
-            .unwrap();
-        let _ = backend.enqueue(EnqueuableJob::mock_job()).await.unwrap();
-
-        assert_eq!(
-            backend
-                .query(Query::IdEquals(42.into()))
-                .await
-                .unwrap()
-                .len(),
-            0
-        );
-        assert_eq!(backend.query(Query::IdEquals(id)).await.unwrap().len(), 1);
-        assert_eq!(
-            backend
-                .query(Query::ExecutorEqual(EnqueuableJob::DEFAULT_EXECUTOR))
-                .await
-                .unwrap()
-                .len(),
-            2
-        );
-    }
-
-    #[tokio::test]
-    async fn prune_jobs() {
-        let now = Utc::now();
-        let backend = InMemoryBackend::new();
-        for i in 0..100 {
-            let id = backend
-                .enqueue(EnqueuableJob::mock_job().with_scheduled_at(now - TimeDelta::hours(i)))
-                .await
-                .unwrap();
-            backend.set_job_status(id, JobStatus::Complete).await;
-        }
-        for _ in 0..100 {
-            let id = backend
-                .enqueue(EnqueuableJob::mock_job().with_executor("other_executor"))
-                .await
-                .unwrap();
-            backend.set_job_status(id, JobStatus::Complete).await;
-        }
-
-        backend
-            .prune_jobs(&PruneSpec {
-                status: JobStatus::Cancelled,
-                prune_by: PruneBy::MaxLength(10),
-                executors: Spec::Except(vec![]),
-            })
-            .await
-            .unwrap();
-
-        // No jobs have been pruned
-        let all_jobs = Query::Not(Box::new(Query::ExecutorEqual("")));
-        assert_eq!(backend.query(all_jobs.clone()).await.unwrap().len(), 200);
-
-        backend
-            .prune_jobs(&PruneSpec {
-                status: JobStatus::Complete,
-                prune_by: PruneBy::MaxLength(50),
-                executors: Spec::Only(vec!["other_executor"]),
-            })
-            .await
-            .unwrap();
-
-        // 50 jobs have been pruned for `"other_executor"`
-        let all_jobs = Query::Not(Box::new(Query::ExecutorEqual("")));
-        assert_eq!(backend.query(all_jobs.clone()).await.unwrap().len(), 150);
-
-        backend
-            .prune_jobs(&PruneSpec {
-                status: JobStatus::Complete,
-                prune_by: PruneBy::MaxAge(TimeDelta::hours(50)),
-                executors: Spec::Only(vec![EnqueuableJob::DEFAULT_EXECUTOR]),
-            })
-            .await
-            .unwrap();
-
-        // 50 more jobs have been pruned for `EnqueuableJob::DEFAULT_EXECUTOR`
-        let all_jobs = Query::Not(Box::new(Query::ExecutorEqual("")));
-        assert_eq!(backend.query(all_jobs.clone()).await.unwrap().len(), 100);
     }
 
     #[tokio::test]

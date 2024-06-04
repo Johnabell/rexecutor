@@ -20,7 +20,7 @@ impl<'a> Queryable for Query<'a> {
             Query::ExecutorEqual(executor) => job.executor == *executor,
             Query::DataEquals(data) => &job.data == data,
             Query::MetadataEquals(metadata) => &job.metadata == metadata,
-            Query::IdEquals(id) => job.id == i32::from(*id),
+            Query::IdEquals(id) => job.id == *id,
             Query::IdIn(ids) => ids.contains(&job.id.into()),
             Query::StatusEqual(status) => job.status == *status,
             Query::TagsAllOf(tags) => tags.iter().all(|tag| job.tags.iter().any(|t| t == *tag)),

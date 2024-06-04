@@ -14,7 +14,7 @@ pub(crate) mod runner;
 pub mod uniqueness_criteria;
 
 /// The id of a job.
-#[derive(Debug, Eq, PartialEq, Clone, Copy)]
+#[derive(Debug, Eq, Clone, Copy)]
 pub struct JobId(i32);
 
 impl From<i32> for JobId {
@@ -26,6 +26,24 @@ impl From<i32> for JobId {
 impl From<JobId> for i32 {
     fn from(value: JobId) -> Self {
         value.0
+    }
+}
+
+impl PartialEq<i32> for JobId {
+    fn eq(&self, other: &i32) -> bool {
+        self.0 == *other
+    }
+}
+
+impl PartialEq<JobId> for i32 {
+    fn eq(&self, other: &JobId) -> bool {
+        *self == other.0
+    }
+}
+
+impl PartialEq<JobId> for JobId {
+    fn eq(&self, other: &Self) -> bool {
+        self.0 == other.0
     }
 }
 
@@ -237,7 +255,7 @@ mod test {
             backend::Job::raw_job().with_raw_data(serde_json::Value::String("data".to_owned()));
         let job = Job::<String, String>::try_from(backend_job.clone()).expect("Should not error");
 
-        assert_eq!(i32::from(job.id), backend_job.id);
+        assert_eq!(job.id, backend_job.id);
         assert_eq!(job.status, backend_job.status);
         assert_eq!(job.executor, backend_job.executor);
         assert_eq!(&job.data, "data");
