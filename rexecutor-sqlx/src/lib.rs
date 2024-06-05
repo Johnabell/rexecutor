@@ -1,6 +1,5 @@
-//! A postgres backend for Rexecutor built on SQLX.
-//!
-//#![deny(missing_docs)]
+//! A postgres backend for Rexecutor built on [`sqlx`].
+#![deny(missing_docs)]
 
 use std::{collections::HashMap, sync::Arc};
 
@@ -28,6 +27,7 @@ mod unique;
 
 type Subscriber = mpsc::UnboundedSender<DateTime<Utc>>;
 
+/// A postgres implementation of a [`rexecutor::backend::Backend`].
 #[derive(Clone, Debug)]
 pub struct RexecutorPgBackend {
     pool: PgPool,
@@ -43,7 +43,7 @@ struct Notification {
 use types::*;
 
 impl RexecutorPgBackend {
-    /// Creates a new [RexecutorPgBackend] from a db connection string.
+    /// Creates a new [`RexecutorPgBackend`] from a db connection string.
     pub async fn from_db_url(db_url: &str) -> Result<Self, BackendError> {
         let pool = PgPoolOptions::new()
             .connect(db_url)
@@ -51,6 +51,7 @@ impl RexecutorPgBackend {
             .map_err(|_| BackendError::BadState)?;
         Self::from_pool(pool).await
     }
+    /// Create a new [`RexecutorPgBackend`] from an existing [`PgPool`].
     pub async fn from_pool(pool: PgPool) -> Result<Self, BackendError> {
         let this = Self {
             pool,
@@ -90,6 +91,7 @@ impl RexecutorPgBackend {
         Ok(this)
     }
 
+    /// This can be used to run the [`RexecutorPgBackend`]'s migrations.
     pub async fn run_migrations(&self) -> Result<(), BackendError> {
         tracing::info!("Running RexecutorPgBackend migrations");
         sqlx::migrate!()
