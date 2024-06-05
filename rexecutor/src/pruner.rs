@@ -87,7 +87,7 @@ use crate::{executor::Executor, job::JobStatus};
 /// For example, is is possible to configure the pruner to achieve all of the following:
 ///
 /// - clean up completed jobs for a single executor so there is only 10 completed jobs
-/// at a time,
+///   at a time,
 /// - clean up all completed jobs for all executors that are more than a month old
 /// - clean up cancelled jobs that are a year old
 /// - keeping all discarded jobs indefinitely

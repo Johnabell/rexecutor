@@ -91,7 +91,7 @@ where
         // This should really be the status of the job after the execution
         let delay = E::backoff(&job);
 
-        tracing::Span::current().record("job_id", &tracing::field::debug(&job_id));
+        tracing::Span::current().record("job_id", tracing::field::debug(&job_id));
 
         let fut = tokio::time::timeout(timeout, E::execute(job)).in_current_span();
         let result = if E::BLOCKING {
@@ -132,7 +132,7 @@ where
         // This should really be the status of the job after the execution
         let delay = E::backoff(&job);
 
-        tracing::Span::current().record("job_id", &tracing::field::debug(&job_id));
+        tracing::Span::current().record("job_id", tracing::field::debug(&job_id));
 
         let fut = E::execute(job).in_current_span();
         let result = if E::BLOCKING {

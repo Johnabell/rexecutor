@@ -1,0 +1,97 @@
+name: CI
+
+on:
+  push:
+    branches: [ "master" ]
+  pull_request:
+    branches: [ "master" ]
+
+env:
+  CARGO_TERM_COLOR: always
+  DATABASE_URL: "postgresql://postgres:postgres@localhost:5432/postgres"
+
+jobs:
+  test:
+    name: CI
+    services:
+      postgres:
+        image: public.ecr.aws/docker/library/postgres:12-alpine
+        ports:
+        - 5432:5432
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_USER: postgres
+        # Set health checks to wait until postgres has started
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    strategy:
+      matrix:
+        rust: [ 1.76.0, stable, nightly ]
+        #features: [ --no-default-features, --all-features ]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: Swatinem/rust-cache@v2
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: ${{ matrix.rust }}
+          components: rustfmt, clippy
+      - name: Install sqlx-cli
+        run: cargo install sqlx-cli --no-default-features --features postgres
+      - name: Setup DB
+        working-directory: ./rexecutor-sqlx
+        run: sqlx database setup
+      - name: Format
+        run: cargo fmt --all -- --check
+      - name: Clippy
+        run: cargo clippy
+      - name: cargo doc
+        run: cargo doc --no-deps --all-features
+      - name: Test
+        run: cargo test
+      - name: Build
+        run: cargo build
+
+  coverage:
+    name: coverage
+    services:
+      postgres:
+        image: public.ecr.aws/docker/library/postgres:12-alpine
+        ports:
+        - 5432:5432
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_USER: postgres
+        # Set health checks to wait until postgres has started
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: Swatinem/rust-cache@v2
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: nightly
+      - name: Install cargo-llvm-cov
+        uses: taiki-e/install-action@cargo-llvm-cov
+      - name: Install sqlx-cli
+        run: cargo install sqlx-cli --no-default-features --features postgres
+      - name: Setup DB
+        working-directory: ./rexecutor-sqlx
+        run: sqlx database setup
+      - name: Test Coverage (over 90%)
+        run: cargo llvm-cov --doctests --lcov --output-path lcov.info --no-clean --fail-under-lines 90
+        continue-on-error: false
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v3
+        if: github.event.pull_request.draft == false
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          files: lcov.info
+          fail_ci_if_error: false

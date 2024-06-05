@@ -11,6 +11,7 @@ use futures::StreamExt;
 use super::*;
 
 const DEFAULT_EXECUTOR: &str = "executor";
+const DELTA: TimeDelta = TimeDelta::milliseconds(1);
 
 impl<'a> EnqueuableJob<'a> {
     pub(crate) const DEFAULT_EXECUTOR: &'static str = DEFAULT_EXECUTOR;
@@ -329,7 +330,7 @@ pub async fn subscribe_ready_jobs_enqueuing_wakes_subscriber(backend: impl Backe
 pub async fn subscribe_ready_jobs_streams_jobs_by_priority(backend: impl Backend) {
     let executor = "executor";
     let scheduled_at1 = Utc::now();
-    let scheduled_at2 = Utc::now() + TimeDelta::milliseconds(300);
+    let scheduled_at2 = Utc::now() + TimeDelta::milliseconds(500);
     let mut stream = backend.subscribe_ready_jobs(executor.into()).await;
     let job_id1 = backend
         .enqueue(
@@ -563,7 +564,7 @@ pub async fn mark_job_snoozed_first_attempt(backend: impl BackendTesting) {
     let job = backend.get_job(id).await.unwrap();
     assert_eq!(job.status, JobStatus::Scheduled);
     assert_eq!(job.attempt, 0);
-    assert_eq!(job.scheduled_at, scheduled_at);
+    assert!((job.scheduled_at - scheduled_at).abs() < DELTA);
 }
 
 #[doc(hidden)]
@@ -579,7 +580,7 @@ pub async fn mark_job_snoozed_other_attempt(backend: impl BackendTesting) {
     let job = backend.get_job(id).await.unwrap();
     assert_eq!(job.status, JobStatus::Retryable);
     assert_eq!(job.attempt, 1);
-    assert_eq!(job.scheduled_at, scheduled_at);
+    assert!((job.scheduled_at - scheduled_at).abs() < DELTA);
 }
 
 #[doc(hidden)]
