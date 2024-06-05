@@ -1,4 +1,4 @@
-//! Test suite for ensuring a correct implementation of a backend
+//! Test suite for ensuring a correct implementation of a backend.
 use std::{ops::Add, time::Duration};
 
 use crate::{
@@ -252,15 +252,27 @@ impl Job {
 #[doc(hidden)]
 #[async_trait::async_trait]
 pub trait BackendTesting: Backend + Sync {
-    async fn set_job_attempt(&self, id: JobId, attempt: i32) {
-        let mut job = self.get_job(id).await.unwrap();
-        job.attempt = attempt;
-        self.update_job(job).await.unwrap();
-    }
-    async fn set_job_status(&self, id: JobId, job_status: JobStatus) {
-        let mut job = self.get_job(id).await.unwrap();
-        job.status = job_status;
-        self.update_job(job).await.unwrap();
+    /// This will simulate running a job with retrying for the given executor.
+    ///
+    /// This method should only be used if there is a single job enqueued for the executor,
+    /// otherwise it might mark other jobs as executing.
+    async fn increment_job_attempt(
+        &self,
+        id: JobId,
+        number_of_attempts: i32,
+        executor: &'static str,
+    ) {
+        let mut stream = self.subscribe_ready_jobs(executor.into()).await;
+        for _ in 0..number_of_attempts {
+            let _ = stream.next().await;
+            let error = ExecutionError {
+                error_type: ErrorType::Other("custom".to_owned()),
+                message: "Error Message".to_owned(),
+            };
+            self.mark_job_retryable(id, Utc::now(), error)
+                .await
+                .unwrap();
+        }
     }
 
     async fn get_job(&self, id: JobId) -> Option<Job> {
@@ -317,7 +329,7 @@ pub async fn subscribe_ready_jobs_enqueuing_wakes_subscriber(backend: impl Backe
 pub async fn subscribe_ready_jobs_streams_jobs_by_priority(backend: impl Backend) {
     let executor = "executor";
     let scheduled_at1 = Utc::now();
-    let scheduled_at2 = Utc::now() + TimeDelta::milliseconds(10);
+    let scheduled_at2 = Utc::now() + TimeDelta::milliseconds(300);
     let mut stream = backend.subscribe_ready_jobs(executor.into()).await;
     let job_id1 = backend
         .enqueue(
@@ -454,12 +466,12 @@ pub async fn enqueue_unique_replace(backend: impl BackendTesting) {
 pub async fn update_job(backend: impl BackendTesting) {
     let id = backend.enqueue(EnqueuableJob::mock_job()).await.unwrap();
     let mut job = backend.get_job(id).await.unwrap();
-    job.attempt = 3;
+    job.priority = 3;
 
     assert!(backend.update_job(job).await.is_ok());
 
     let job = backend.get_job(id).await.unwrap();
-    assert_eq!(job.attempt, 3);
+    assert_eq!(job.priority, 3);
 }
 
 #[doc(hidden)]
@@ -495,7 +507,9 @@ pub async fn rerun_job_first_attempt(backend: impl BackendTesting) {
     let job = EnqueuableJob::mock_job();
     let original_max_attempts = job.max_attempts as i32;
     let id = backend.enqueue(job).await.unwrap();
-    backend.set_job_attempt(id, 1).await;
+    backend
+        .increment_job_attempt(id, 1, EnqueuableJob::DEFAULT_EXECUTOR)
+        .await;
 
     assert!(backend.rerun_job(id).await.is_ok());
 
@@ -513,7 +527,9 @@ pub async fn rerun_job_first_subsequent_attempt(backend: impl BackendTesting) {
     let job = EnqueuableJob::mock_job();
     let original_max_attempts = job.max_attempts as i32;
     let id = backend.enqueue(job).await.unwrap();
-    backend.set_job_attempt(id, 2).await;
+    backend
+        .increment_job_attempt(id, 2, EnqueuableJob::DEFAULT_EXECUTOR)
+        .await;
 
     assert!(backend.rerun_job(id).await.is_ok());
 
@@ -538,7 +554,9 @@ pub async fn rerun_job_not_found(backend: impl BackendTesting) {
 pub async fn mark_job_snoozed_first_attempt(backend: impl BackendTesting) {
     let scheduled_at = Utc::now().add(TimeDelta::days(1));
     let id = backend.enqueue(EnqueuableJob::mock_job()).await.unwrap();
-    backend.set_job_attempt(id, 1).await;
+    backend
+        .increment_job_attempt(id, 1, EnqueuableJob::DEFAULT_EXECUTOR)
+        .await;
 
     assert!(backend.mark_job_snoozed(id, scheduled_at).await.is_ok());
 
@@ -552,7 +570,9 @@ pub async fn mark_job_snoozed_first_attempt(backend: impl BackendTesting) {
 pub async fn mark_job_snoozed_other_attempt(backend: impl BackendTesting) {
     let scheduled_at = Utc::now().add(TimeDelta::days(1));
     let id = backend.enqueue(EnqueuableJob::mock_job()).await.unwrap();
-    backend.set_job_attempt(id, 2).await;
+    backend
+        .increment_job_attempt(id, 2, EnqueuableJob::DEFAULT_EXECUTOR)
+        .await;
 
     assert!(backend.mark_job_snoozed(id, scheduled_at).await.is_ok());
 
@@ -710,14 +730,14 @@ pub async fn prune_jobs(backend: impl BackendTesting) {
             .enqueue(EnqueuableJob::mock_job().with_scheduled_at(now - TimeDelta::hours(i)))
             .await
             .unwrap();
-        backend.set_job_status(id, JobStatus::Complete).await;
+        backend.mark_job_complete(id).await.unwrap();
     }
     for _ in 0..100 {
         let id = backend
             .enqueue(EnqueuableJob::mock_job().with_executor("other_executor"))
             .await
             .unwrap();
-        backend.set_job_status(id, JobStatus::Complete).await;
+        backend.mark_job_complete(id).await.unwrap();
     }
 
     backend
@@ -731,7 +751,7 @@ pub async fn prune_jobs(backend: impl BackendTesting) {
 
     // No jobs have been pruned
     let all_jobs = Query::Not(Box::new(Query::ExecutorEqual("")));
-    assert_eq!(backend.query(all_jobs.clone()).await.unwrap().len(), 200);
+    assert_eq!(backend.query(all_jobs).await.unwrap().len(), 200);
 
     backend
         .prune_jobs(&PruneSpec {
@@ -744,7 +764,7 @@ pub async fn prune_jobs(backend: impl BackendTesting) {
 
     // 50 jobs have been pruned for `"other_executor"`
     let all_jobs = Query::Not(Box::new(Query::ExecutorEqual("")));
-    assert_eq!(backend.query(all_jobs.clone()).await.unwrap().len(), 150);
+    assert_eq!(backend.query(all_jobs).await.unwrap().len(), 150);
 
     backend
         .prune_jobs(&PruneSpec {
@@ -757,5 +777,5 @@ pub async fn prune_jobs(backend: impl BackendTesting) {
 
     // 50 more jobs have been pruned for `EnqueuableJob::DEFAULT_EXECUTOR`
     let all_jobs = Query::Not(Box::new(Query::ExecutorEqual("")));
-    assert_eq!(backend.query(all_jobs.clone()).await.unwrap().len(), 100);
+    assert_eq!(backend.query(all_jobs).await.unwrap().len(), 100);
 }

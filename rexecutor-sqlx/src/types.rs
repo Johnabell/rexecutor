@@ -3,7 +3,10 @@ use std::fmt::Display;
 use chrono::{DateTime, Utc};
 use rexecutor::backend::BackendError;
 use serde::{Deserialize, Serialize};
-use sqlx::prelude::FromRow;
+use sqlx::{
+    postgres::{PgHasArrayType, PgTypeInfo},
+    prelude::FromRow,
+};
 
 #[derive(sqlx::Type, Debug, Clone, Copy, Serialize, PartialEq, Eq)]
 #[sqlx(type_name = "rexecutor_job_state", rename_all = "lowercase")]
@@ -14,6 +17,12 @@ pub(crate) enum JobStatus {
     Retryable,
     Cancelled,
     Discarded,
+}
+
+impl PgHasArrayType for JobStatus {
+    fn array_type_info() -> PgTypeInfo {
+        PgTypeInfo::with_name("rexecutor_job_state[]")
+    }
 }
 
 impl From<JobStatus> for rexecutor::job::JobStatus {

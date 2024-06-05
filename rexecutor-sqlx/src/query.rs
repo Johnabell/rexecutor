@@ -32,7 +32,7 @@ impl ToQuery for PruneSpec {
         };
         match self.prune_by {
             PruneBy::MaxAge(time) => {
-                builder.push(" AND inserted_at");
+                builder.push(" AND scheduled_at");
                 if in_past {
                     builder.push(" < ");
                     builder.push_bind(Utc::now() - time);
@@ -42,7 +42,7 @@ impl ToQuery for PruneSpec {
                 }
             }
             PruneBy::MaxLength(count) => {
-                builder.push(" ORDER BY inserted_at");
+                builder.push(" ORDER BY scheduled_at");
                 if in_past {
                     builder.push(" DESC ");
                 } else {
@@ -180,7 +180,7 @@ mod test {
         assert_eq!(
             spec.query().into_sql(),
             "DELETE FROM rexecutor_jobs WHERE id in (SELECT id FROM rexecutor_jobs \
-            WHERE status = $1 AND executor = ANY($2) AND inserted_at < $3)"
+            WHERE status = $1 AND executor = ANY($2) AND scheduled_at < $3)"
         );
 
         let spec = PruneSpec {
@@ -192,7 +192,7 @@ mod test {
         assert_eq!(
             spec.query().into_sql(),
             "DELETE FROM rexecutor_jobs WHERE id in (SELECT id FROM rexecutor_jobs \
-            WHERE status = $1 AND executor = ANY($2) ORDER BY inserted_at DESC OFFSET $3)"
+            WHERE status = $1 AND executor = ANY($2) ORDER BY scheduled_at DESC OFFSET $3)"
         );
 
         let spec = PruneSpec {
@@ -204,7 +204,7 @@ mod test {
         assert_eq!(
             spec.query().into_sql(),
             "DELETE FROM rexecutor_jobs WHERE id in (SELECT id FROM rexecutor_jobs \
-            WHERE status = $1 AND executor != ALL($2) ORDER BY inserted_at DESC OFFSET $3)"
+            WHERE status = $1 AND executor != ALL($2) ORDER BY scheduled_at DESC OFFSET $3)"
         );
 
         let spec = PruneSpec {
@@ -216,7 +216,7 @@ mod test {
         assert_eq!(
             spec.query().into_sql(),
             "DELETE FROM rexecutor_jobs WHERE id in (SELECT id FROM rexecutor_jobs \
-            WHERE status = $1 AND executor != ALL($2) AND inserted_at < $3)"
+            WHERE status = $1 AND executor != ALL($2) AND scheduled_at < $3)"
         );
     }
 

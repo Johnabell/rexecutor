@@ -4,9 +4,15 @@ use chrono::{DateTime, Utc};
 use rexecutor::job::uniqueness_criteria::UniquenessCriteria;
 use sqlx::{Postgres, QueryBuilder};
 
+use crate::types::JobStatus;
+
 pub(crate) trait Unique {
     fn unique_identifier(&self, executor_identifier: &'_ str) -> i64;
-    fn query(&self, key: i64, scheduled_at: DateTime<Utc>) -> QueryBuilder<'_, Postgres>;
+    fn query<'a>(
+        &self,
+        executor_identifier: &'a str,
+        scheduled_at: DateTime<Utc>,
+    ) -> QueryBuilder<'a, Postgres>;
 }
 
 impl<'a> Unique for UniquenessCriteria<'a> {
@@ -20,10 +26,31 @@ impl<'a> Unique for UniquenessCriteria<'a> {
         state.finish() as i64
     }
 
-    fn query(&self, key: i64, scheduled_at: DateTime<Utc>) -> QueryBuilder<'_, Postgres> {
+    fn query<'b>(
+        &self,
+        executor_identifier: &'b str,
+        scheduled_at: DateTime<Utc>,
+    ) -> QueryBuilder<'b, Postgres> {
         let mut builder =
-            QueryBuilder::new("SELECT id, status FROM rexecutor_jobs WHERE uniqueness_key = ");
-        builder.push_bind(key);
+            QueryBuilder::new("SELECT id, status FROM rexecutor_jobs WHERE status = ANY(");
+        builder.push_bind(
+            self.statuses
+                .iter()
+                .map(|status| JobStatus::from(*status))
+                .collect::<Vec<_>>(),
+        );
+        builder.push(")");
+
+        if let Some(key) = self.key {
+            builder.push(" AND uniqueness_key = ");
+            builder.push_bind(key);
+        }
+
+        if self.executor {
+            builder.push(" AND executor = ");
+            builder.push_bind(executor_identifier);
+        }
+
         if let Some(duration) = self.duration {
             let cutoff = scheduled_at - duration;
             builder.push(" AND scheduled_at >= ").push_bind(cutoff);

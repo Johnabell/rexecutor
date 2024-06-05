@@ -1,3 +1,7 @@
+//! A postgres backend for Rexecutor built on SQLX.
+//!
+//#![deny(missing_docs)]
+
 use std::{collections::HashMap, sync::Arc};
 
 use chrono::{DateTime, Utc};
@@ -174,7 +178,7 @@ impl RexecutorPgBackend {
             .execute(&mut *tx)
             .await?;
         match uniqueness_criteria
-            .query(unique_identifier, job.scheduled_at)
+            .query(job.executor.as_str(), job.scheduled_at)
             .build()
             .fetch_optional(&mut *tx)
             .await?
@@ -184,16 +188,18 @@ impl RexecutorPgBackend {
                     r#"INSERT INTO rexecutor_jobs (
                         executor,
                         data,
+                        metadata,
                         max_attempts,
                         scheduled_at,
                         priority,
                         tags,
                         uniqueness_key
-                    ) VALUES ($1, $2, $3, $4, $5, $6, $7)
+                    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
                     RETURNING id
                     "#,
                     job.executor,
                     job.data,
+                    job.metadata,
                     job.max_attempts as i32,
                     job.scheduled_at,
                     job.priority as i32,
@@ -216,27 +222,27 @@ impl RexecutorPgBackend {
                             .map(|js| JobStatus::from(*js))
                             .any(|js| js == status) =>
                     {
-                        let mut builder = QueryBuilder::new("UPDATE rexecutor_jobs SET");
-                        let mut seperated = builder.separated(",");
+                        let mut builder = QueryBuilder::new("UPDATE rexecutor_jobs SET ");
+                        let mut seperated = builder.separated(", ");
                         if replace.scheduled_at {
-                            seperated.push_unseparated(" scheduled_at = ");
-                            seperated.push_bind(job.scheduled_at);
+                            seperated.push("scheduled_at = ");
+                            seperated.push_bind_unseparated(job.scheduled_at);
                         }
                         if replace.data {
-                            seperated.push_unseparated(" data = ");
-                            seperated.push_bind(job.data);
+                            seperated.push("data = ");
+                            seperated.push_bind_unseparated(job.data);
                         }
                         if replace.metadata {
-                            seperated.push_unseparated(" metadata = ");
-                            seperated.push_bind(job.metadata);
+                            seperated.push("metadata = ");
+                            seperated.push_bind_unseparated(job.metadata);
                         }
                         if replace.priority {
-                            seperated.push_unseparated(" priority = ");
-                            seperated.push_bind(job.priority as i32);
+                            seperated.push("priority = ");
+                            seperated.push_bind_unseparated(job.priority as i32);
                         }
                         if replace.max_attempts {
-                            seperated.push_unseparated(" max_attempts = ");
-                            seperated.push_bind(job.max_attempts as i32);
+                            seperated.push("max_attempts = ");
+                            seperated.push_bind_unseparated(job.max_attempts as i32);
                         }
                         builder.push(" WHERE id  = ");
                         builder.push_bind(job_id);
@@ -252,8 +258,8 @@ impl RexecutorPgBackend {
         }
     }
 
-    async fn _mark_job_complete(&self, id: JobId) -> sqlx::Result<()> {
-        sqlx::query!(
+    async fn _mark_job_complete(&self, id: JobId) -> sqlx::Result<u64> {
+        Ok(sqlx::query!(
             r#"UPDATE rexecutor_jobs
             SET
                 status = 'complete',
@@ -262,8 +268,8 @@ impl RexecutorPgBackend {
             i32::from(id),
         )
         .execute(&self.pool)
-        .await?;
-        Ok(())
+        .await?
+        .rows_affected())
     }
 
     async fn _mark_job_retryable(
@@ -271,8 +277,8 @@ impl RexecutorPgBackend {
         id: JobId,
         next_scheduled_at: DateTime<Utc>,
         error: ExecutionError,
-    ) -> sqlx::Result<()> {
-        sqlx::query!(
+    ) -> sqlx::Result<u64> {
+        Ok(sqlx::query!(
             r#"UPDATE rexecutor_jobs
             SET
                 status = 'retryable',
@@ -293,16 +299,16 @@ impl RexecutorPgBackend {
             next_scheduled_at,
         )
         .execute(&self.pool)
-        .await?;
-        Ok(())
+        .await?
+        .rows_affected())
     }
 
     async fn _mark_job_snoozed(
         &self,
         id: JobId,
         next_scheduled_at: DateTime<Utc>,
-    ) -> sqlx::Result<()> {
-        sqlx::query!(
+    ) -> sqlx::Result<u64> {
+        Ok(sqlx::query!(
             r#"UPDATE rexecutor_jobs
             SET
                 status = (CASE WHEN attempt = 1 THEN 'scheduled' ELSE 'retryable' END)::rexecutor_job_state,
@@ -313,12 +319,12 @@ impl RexecutorPgBackend {
             next_scheduled_at,
         )
         .execute(&self.pool)
-        .await?;
-        Ok(())
+        .await?
+        .rows_affected())
     }
 
-    async fn _mark_job_discarded(&self, id: JobId, error: ExecutionError) -> sqlx::Result<()> {
-        sqlx::query!(
+    async fn _mark_job_discarded(&self, id: JobId, error: ExecutionError) -> sqlx::Result<u64> {
+        Ok(sqlx::query!(
             r#"UPDATE rexecutor_jobs
             SET
                 status = 'discarded',
@@ -338,12 +344,12 @@ impl RexecutorPgBackend {
             error.message,
         )
         .execute(&self.pool)
-        .await?;
-        Ok(())
+        .await?
+        .rows_affected())
     }
 
-    async fn _mark_job_cancelled(&self, id: JobId, error: ExecutionError) -> sqlx::Result<()> {
-        sqlx::query!(
+    async fn _mark_job_cancelled(&self, id: JobId, error: ExecutionError) -> sqlx::Result<u64> {
+        Ok(sqlx::query!(
             r#"UPDATE rexecutor_jobs
             SET
                 status = 'cancelled',
@@ -363,8 +369,8 @@ impl RexecutorPgBackend {
             error.message,
         )
         .execute(&self.pool)
-        .await?;
-        Ok(())
+        .await?
+        .rows_affected())
     }
 
     async fn next_available_job_scheduled_at_for_executor(
@@ -396,9 +402,9 @@ impl RexecutorPgBackend {
         Ok(())
     }
 
-    async fn rerun(&self, id: JobId) -> sqlx::Result<()> {
+    async fn rerun(&self, id: JobId) -> sqlx::Result<u64> {
         // Currently this increments the max attempts and reschedules the job.
-        sqlx::query!(
+        Ok(sqlx::query!(
             r#"UPDATE rexecutor_jobs
             SET
                 status = (CASE WHEN attempt = 1 THEN 'scheduled' ELSE 'retryable' END)::rexecutor_job_state,
@@ -412,12 +418,12 @@ impl RexecutorPgBackend {
             Utc::now(),
         )
         .execute(&self.pool)
-        .await?;
-        Ok(())
+        .await?
+        .rows_affected())
     }
 
-    async fn update(&self, job: rexecutor::backend::Job) -> sqlx::Result<()> {
-        sqlx::query!(
+    async fn update(&self, job: rexecutor::backend::Job) -> sqlx::Result<u64> {
+        Ok(sqlx::query!(
             r#"UPDATE rexecutor_jobs
             SET
                 data = $2,
@@ -435,9 +441,9 @@ impl RexecutorPgBackend {
             job.priority as i32,
             &job.tags,
         )
-        .fetch_one(&self.pool)
-        .await?;
-        Ok(())
+        .execute(&self.pool)
+        .await?
+        .rows_affected())
     }
 
     async fn run_query<'a>(&self, query: Query<'a>) -> sqlx::Result<Vec<Job>> {

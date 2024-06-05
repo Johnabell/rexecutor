@@ -15,6 +15,18 @@ use tracing::instrument;
 
 use crate::{stream::ReadyJobStream, RexecutorPgBackend};
 
+impl RexecutorPgBackend {
+    fn handle_update(result: sqlx::Result<u64>, job_id: JobId) -> Result<(), BackendError> {
+        match result {
+            Ok(0) => Err(BackendError::JobNotFound(job_id)),
+            Ok(1) => Ok(()),
+            Ok(_) => Err(BackendError::BadState),
+            // TODO fix this
+            Err(_error) => Err(BackendError::BadState),
+        }
+    }
+}
+
 #[async_trait]
 impl Backend for RexecutorPgBackend {
     #[instrument(skip(self))]
@@ -51,9 +63,8 @@ impl Backend for RexecutorPgBackend {
         .map_err(|_| BackendError::BadState)
     }
     async fn mark_job_complete(&self, id: JobId) -> Result<(), BackendError> {
-        self._mark_job_complete(id)
-            .await
-            .map_err(|_| BackendError::BadState)
+        let result = self._mark_job_complete(id).await;
+        Self::handle_update(result, id)
     }
     async fn mark_job_retryable(
         &self,
@@ -61,36 +72,32 @@ impl Backend for RexecutorPgBackend {
         next_scheduled_at: DateTime<Utc>,
         error: ExecutionError,
     ) -> Result<(), BackendError> {
-        self._mark_job_retryable(id, next_scheduled_at, error)
-            .await
-            .map_err(|_| BackendError::BadState)
+        let result = self._mark_job_retryable(id, next_scheduled_at, error).await;
+        Self::handle_update(result, id)
     }
     async fn mark_job_discarded(
         &self,
         id: JobId,
         error: ExecutionError,
     ) -> Result<(), BackendError> {
-        self._mark_job_discarded(id, error)
-            .await
-            .map_err(|_| BackendError::BadState)
+        let result = self._mark_job_discarded(id, error).await;
+        Self::handle_update(result, id)
     }
     async fn mark_job_cancelled(
         &self,
         id: JobId,
         error: ExecutionError,
     ) -> Result<(), BackendError> {
-        self._mark_job_cancelled(id, error)
-            .await
-            .map_err(|_| BackendError::BadState)
+        let result = self._mark_job_cancelled(id, error).await;
+        Self::handle_update(result, id)
     }
     async fn mark_job_snoozed(
         &self,
         id: JobId,
         next_scheduled_at: DateTime<Utc>,
     ) -> Result<(), BackendError> {
-        self._mark_job_snoozed(id, next_scheduled_at)
-            .await
-            .map_err(|_| BackendError::BadState)
+        let result = self._mark_job_snoozed(id, next_scheduled_at).await;
+        Self::handle_update(result, id)
     }
     async fn prune_jobs(&self, spec: &PruneSpec) -> Result<(), BackendError> {
         self.delete_from_spec(spec)
@@ -98,10 +105,13 @@ impl Backend for RexecutorPgBackend {
             .map_err(|_| BackendError::BadState)
     }
     async fn rerun_job(&self, id: JobId) -> Result<(), BackendError> {
-        self.rerun(id).await.map_err(|_| BackendError::BadState)
+        let result = self.rerun(id).await;
+        Self::handle_update(result, id)
     }
     async fn update_job(&self, job: Job) -> Result<(), BackendError> {
-        self.update(job).await.map_err(|_| BackendError::BadState)
+        let id = job.id.into();
+        let result = self.update(job).await;
+        Self::handle_update(result, id)
     }
     async fn query<'a>(&self, query: Query<'a>) -> Result<Vec<Job>, BackendError> {
         self.run_query(query)
@@ -120,10 +130,9 @@ mod test {
 
     use super::*;
     use chrono::TimeDelta;
+    use rexecutor::job::ErrorType;
     use serde_json::Value;
     use sqlx::PgPool;
-
-    const EXECUTOR: &str = "executor";
 
     impl From<PgPool> for RexecutorPgBackend {
         fn from(pool: PgPool) -> Self {
@@ -134,22 +143,45 @@ mod test {
         }
     }
 
-    impl RexecutorPgBackend {
-        async fn with_mock_job(&self, scheduled_at: DateTime<Utc>) -> JobId {
-            let job = EnqueuableJob {
-                executor: EXECUTOR.to_owned(),
+    struct MockJob<'a>(EnqueuableJob<'a>);
+
+    impl<'a> From<MockJob<'a>> for EnqueuableJob<'a> {
+        fn from(value: MockJob<'a>) -> Self {
+            value.0
+        }
+    }
+
+    impl<'a> Default for MockJob<'a> {
+        fn default() -> Self {
+            Self(EnqueuableJob {
+                executor: "executor".to_owned(),
                 data: Value::String("data".to_owned()),
                 metadata: Value::String("metadata".to_owned()),
                 max_attempts: 5,
-                scheduled_at,
+                scheduled_at: Utc::now(),
                 tags: Default::default(),
                 priority: 0,
                 uniqueness_criteria: None,
-            };
+            })
+        }
+    }
 
-            self.enqueue(job).await.unwrap()
+    impl<'a> MockJob<'a> {
+        const EXECUTOR: &'static str = "executor";
+
+        async fn enqueue(self, backend: impl Backend) -> JobId {
+            backend.enqueue(self.0).await.unwrap()
         }
 
+        fn with_scheduled_at(self, scheduled_at: DateTime<Utc>) -> Self {
+            Self(EnqueuableJob {
+                scheduled_at,
+                ..self.0
+            })
+        }
+    }
+
+    impl RexecutorPgBackend {
         async fn all_jobs(&self) -> sqlx::Result<Vec<Job>> {
             sqlx::query_as!(
                 Job,
@@ -178,6 +210,12 @@ mod test {
         }
     }
 
+    rexecutor::backend::testing::test_suite!(
+        attr: sqlx::test,
+        args: (pool: PgPool),
+        backend: RexecutorPgBackend::from_pool(pool).await.unwrap()
+    );
+
     // TODO: add tests for ignoring running, cancelled, complete, and discarded jobs
 
     #[sqlx::test]
@@ -185,7 +223,7 @@ mod test {
         let backend: RexecutorPgBackend = pool.into();
 
         let job = backend
-            .load_job_mark_as_executing_for_executor(EXECUTOR)
+            .load_job_mark_as_executing_for_executor(MockJob::EXECUTOR)
             .await
             .unwrap();
 
@@ -197,14 +235,64 @@ mod test {
         pool: PgPool,
     ) {
         let backend: RexecutorPgBackend = pool.into();
-        let _ = backend.with_mock_job(Utc::now()).await;
+
+        let job_id = MockJob::default().enqueue(&backend).await;
 
         let job = backend
-            .load_job_mark_as_executing_for_executor(EXECUTOR)
+            .load_job_mark_as_executing_for_executor(MockJob::EXECUTOR)
+            .await
+            .unwrap()
+            .expect("Should return a job");
+
+        assert_eq!(job.id, job_id);
+        assert_eq!(job.status, JobStatus::Executing);
+    }
+
+    #[sqlx::test]
+    async fn load_job_mark_as_executing_for_executor_does_not_return_executing_jobs(pool: PgPool) {
+        let backend: RexecutorPgBackend = pool.into();
+
+        MockJob::default().enqueue(&backend).await;
+
+        let _ = backend
+            .load_job_mark_as_executing_for_executor(MockJob::EXECUTOR)
+            .await
+            .unwrap()
+            .expect("Should return a job");
+
+        let job = backend
+            .load_job_mark_as_executing_for_executor(MockJob::EXECUTOR)
             .await
             .unwrap();
 
-        assert!(job.is_some());
+        assert!(job.is_none());
+    }
+
+    #[sqlx::test]
+    async fn load_job_mark_as_executing_for_executor_returns_retryable_jobs(pool: PgPool) {
+        let backend: RexecutorPgBackend = pool.into();
+
+        let job_id = MockJob::default().enqueue(&backend).await;
+        backend
+            .mark_job_retryable(
+                job_id,
+                Utc::now(),
+                ExecutionError {
+                    error_type: ErrorType::Panic,
+                    message: "Oh dear".to_owned(),
+                },
+            )
+            .await
+            .unwrap();
+
+        let job = backend
+            .load_job_mark_as_executing_for_executor(MockJob::EXECUTOR)
+            .await
+            .unwrap()
+            .expect("Should return a job");
+
+        assert_eq!(job.id, job_id);
+        assert_eq!(job.status, JobStatus::Executing);
     }
 
     #[sqlx::test]
@@ -212,33 +300,76 @@ mod test {
         pool: PgPool,
     ) {
         let backend: RexecutorPgBackend = pool.into();
-        let _ = backend
-            .with_mock_job(Utc::now() - TimeDelta::hours(3))
+        let job_id = MockJob::default()
+            .with_scheduled_at(Utc::now() - TimeDelta::hours(3))
+            .enqueue(&backend)
             .await;
 
         let job = backend
-            .load_job_mark_as_executing_for_executor(EXECUTOR)
+            .load_job_mark_as_executing_for_executor(MockJob::EXECUTOR)
+            .await
+            .unwrap()
+            .expect("Should return a job");
+
+        assert_eq!(job.id, job_id);
+        assert_eq!(job.status, JobStatus::Executing);
+    }
+
+    #[sqlx::test]
+    async fn load_job_mark_as_executing_for_executor_returns_oldest_scheduled_at_executable_job(
+        pool: PgPool,
+    ) {
+        let backend: RexecutorPgBackend = pool.into();
+        let expected_job_id = MockJob::default()
+            .with_scheduled_at(Utc::now() - TimeDelta::hours(3))
+            .enqueue(&backend)
+            .await;
+
+        let _ = MockJob::default().enqueue(&backend).await;
+
+        let job_id = MockJob::default().enqueue(&backend).await;
+        backend.mark_job_complete(job_id).await.unwrap();
+
+        let job_id = MockJob::default().enqueue(&backend).await;
+        backend
+            .mark_job_discarded(
+                job_id,
+                ExecutionError {
+                    error_type: ErrorType::Panic,
+                    message: "Oh dear".to_owned(),
+                },
+            )
             .await
             .unwrap();
 
-        assert!(job.is_some());
+        let job_id = MockJob::default().enqueue(&backend).await;
+        backend
+            .mark_job_cancelled(
+                job_id,
+                ExecutionError {
+                    error_type: ErrorType::Cancelled,
+                    message: "Not needed".to_owned(),
+                },
+            )
+            .await
+            .unwrap();
+
+        let job = backend
+            .load_job_mark_as_executing_for_executor(MockJob::EXECUTOR)
+            .await
+            .unwrap()
+            .expect("Should return a job");
+
+        assert_eq!(job.id, expected_job_id);
+        assert_eq!(job.status, JobStatus::Executing);
     }
 
     #[sqlx::test]
     async fn enqueue_test(pool: PgPool) {
         let backend: RexecutorPgBackend = pool.into();
-        let job = EnqueuableJob {
-            executor: "executor".to_owned(),
-            data: Value::String("data".to_owned()),
-            metadata: Value::String("metadata".to_owned()),
-            max_attempts: 5,
-            scheduled_at: Utc::now(),
-            tags: Default::default(),
-            priority: 0,
-            uniqueness_criteria: None,
-        };
+        let job = MockJob::default();
 
-        let result = backend.enqueue(job).await;
+        let result = backend.enqueue(job.into()).await;
 
         assert!(result.is_ok());
 
