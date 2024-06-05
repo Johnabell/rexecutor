@@ -419,7 +419,7 @@
 //! The global backend can be set using [`Rexecutor::set_global_backend`] this should only be
 //! called once otherwise it will return an error.
 //!
-//! In fact for a single possible [`Rexecutor`] instance it is impossible to call this twice
+//! In fact for a single [`Rexecutor`] instance it is impossible to call this twice
 //!
 //! ```compile_fail
 //! # use rexecutor::prelude::*;
@@ -715,7 +715,7 @@ impl InternalRexecutorState for GlobalSet {}
 /// The global backend can be set using [`Rexecutor::set_global_backend`] this should only be
 /// called once otherwise it will return an error.
 ///
-/// In fact for a single possible [`Rexecutor`] instance it is impossible to call this twice
+/// In fact for a single [`Rexecutor`] instance it is impossible to call this twice
 ///
 /// ```compile_fail
 /// # use rexecutor::prelude::*;
