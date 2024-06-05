@@ -112,7 +112,7 @@
 //! When defining an [`Executor`] you specify the maximum number of attempts via
 //! [`Executor::MAX_ATTEMPTS`]. However, when inserting a job it is possible to override this value
 //! by calling [`job::builder::JobBuilder::with_max_attempts`] (if not called the max attempts will be equal to
-//! [`Executor::MAX_ATTEMPTS`].
+//! [`Executor::MAX_ATTEMPTS`]).
 //!
 //! Similarly, the executor can define a job uniqueness criteria via
 //! [`Executor::UNIQUENESS_CRITERIA`]. However, using [`job::builder::JobBuilder::unique`] it is possible to
@@ -186,7 +186,7 @@
 //! When defining an [`Executor`] you specify the maximum number of attempts via
 //! [`Executor::MAX_ATTEMPTS`]. However, when inserting a job it is possible to override this value
 //! by calling [`job::builder::JobBuilder::with_max_attempts`] (if not called the max attempts will be equal to
-//! [`Executor::MAX_ATTEMPTS`].
+//! [`Executor::MAX_ATTEMPTS`]).
 //!
 //! Similarly, the executor can define a job uniqueness criteria via
 //! [`Executor::UNIQUENESS_CRITERIA`]. However, using [`job::builder::JobBuilder::unique`] it is possible to
