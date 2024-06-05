@@ -1,4 +1,4 @@
-[![CI](https://github.com/Johnabell/rexecutor/actions/workflows/ci.yaml/badge.svg)](https://github.com/Johnabell/rexecutor/actions/workflows/ci.yaml)
+[![CI](https://github.com/Johnabell/rexecutor/actions/workflows/ci.yaml/badge.svg)](https://github.com/Johnabell/rexecutor/actions/workflows/ci.yaml) [![codecov](https://codecov.io/gh/Johnabell/rexecutor/graph/badge.svg?token=BpZUtSgnWT)](https://codecov.io/gh/Johnabell/rexecutor)
 
 # Rexecutor
 
