@@ -1,3 +1,5 @@
+[![CI](https://github.com/Johnabell/rexecutor/actions/workflows/ci.yaml/badge.svg)](https://github.com/Johnabell/rexecutor/actions/workflows/ci.yaml)
+
 # Rexecutor
 
 A robust job execution library for rust built on the tokio runtime.
