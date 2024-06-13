@@ -42,13 +42,25 @@ struct Notification {
 
 use types::*;
 
+fn map_err(error: sqlx::Error) -> BackendError {
+    match error {
+        sqlx::Error::Io(err) => BackendError::Io(err),
+        sqlx::Error::Tls(err) => BackendError::Io(std::io::Error::other(err)),
+        sqlx::Error::Protocol(err) => BackendError::Io(std::io::Error::other(err)),
+        sqlx::Error::AnyDriverError(err) => BackendError::Io(std::io::Error::other(err)),
+        sqlx::Error::PoolTimedOut => BackendError::Io(std::io::Error::other(error)),
+        sqlx::Error::PoolClosed => BackendError::Io(std::io::Error::other(error)),
+        _ => BackendError::BadState,
+    }
+}
+
 impl RexecutorPgBackend {
     /// Creates a new [`RexecutorPgBackend`] from a db connection string.
     pub async fn from_db_url(db_url: &str) -> Result<Self, BackendError> {
         let pool = PgPoolOptions::new()
             .connect(db_url)
             .await
-            .map_err(|_| BackendError::BadState)?;
+            .map_err(map_err)?;
         Self::from_pool(pool).await
     }
     /// Create a new [`RexecutorPgBackend`] from an existing [`PgPool`].
@@ -59,11 +71,11 @@ impl RexecutorPgBackend {
         };
         let mut listener = PgListener::connect_with(&this.pool)
             .await
-            .map_err(|_| BackendError::BadState)?;
+            .map_err(map_err)?;
         listener
             .listen("public.rexecutor_scheduled")
             .await
-            .map_err(|_| BackendError::BadState)?;
+            .map_err(map_err)?;
 
         tokio::spawn({
             let subscribers = this.subscribers.clone();
@@ -97,7 +109,7 @@ impl RexecutorPgBackend {
         sqlx::migrate!()
             .run(&self.pool)
             .await
-            .map_err(|_| BackendError::BadState)
+            .map_err(|err| BackendError::Io(std::io::Error::other(err)))
     }
 
     async fn load_job_mark_as_executing_for_executor(

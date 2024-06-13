@@ -406,7 +406,9 @@ pub enum BackendError {
     /// No jobs was found matching the criteria provided.
     #[error("Job not found: {0}")]
     JobNotFound(JobId),
-    // TODO do we need some sort of IO error here
+    /// There was an error doing IO with the backend
+    #[error(transparent)]
+    Io(std::io::Error),
 }
 
 #[cfg(test)]

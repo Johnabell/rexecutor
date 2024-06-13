@@ -13,7 +13,7 @@ use rexecutor::{
 use tokio::sync::mpsc;
 use tracing::instrument;
 
-use crate::{stream::ReadyJobStream, RexecutorPgBackend};
+use crate::{map_err, stream::ReadyJobStream, RexecutorPgBackend};
 
 impl RexecutorPgBackend {
     fn handle_update(result: sqlx::Result<u64>, job_id: JobId) -> Result<(), BackendError> {
@@ -21,8 +21,7 @@ impl RexecutorPgBackend {
             Ok(0) => Err(BackendError::JobNotFound(job_id)),
             Ok(1) => Ok(()),
             Ok(_) => Err(BackendError::BadState),
-            // TODO fix this
-            Err(_error) => Err(BackendError::BadState),
+            Err(error) => Err(map_err(error)),
         }
     }
 }
@@ -59,8 +58,7 @@ impl Backend for RexecutorPgBackend {
         } else {
             self.insert_job(job).await
         }
-        // TODO error handling
-        .map_err(|_| BackendError::BadState)
+        .map_err(map_err)
     }
     async fn mark_job_complete(&self, id: JobId) -> Result<(), BackendError> {
         let result = self._mark_job_complete(id).await;
@@ -100,9 +98,7 @@ impl Backend for RexecutorPgBackend {
         Self::handle_update(result, id)
     }
     async fn prune_jobs(&self, spec: &PruneSpec) -> Result<(), BackendError> {
-        self.delete_from_spec(spec)
-            .await
-            .map_err(|_| BackendError::BadState)
+        self.delete_from_spec(spec).await.map_err(map_err)
     }
     async fn rerun_job(&self, id: JobId) -> Result<(), BackendError> {
         let result = self.rerun(id).await;
@@ -116,7 +112,7 @@ impl Backend for RexecutorPgBackend {
     async fn query<'a>(&self, query: Query<'a>) -> Result<Vec<Job>, BackendError> {
         self.run_query(query)
             .await
-            .map_err(|_| BackendError::BadState)?
+            .map_err(map_err)?
             .into_iter()
             .map(TryFrom::try_from)
             .collect()
@@ -215,8 +211,6 @@ mod test {
         args: (pool: PgPool),
         backend: RexecutorPgBackend::from_pool(pool).await.unwrap()
     );
-
-    // TODO: add tests for ignoring running, cancelled, complete, and discarded jobs
 
     #[sqlx::test]
     async fn load_job_mark_as_executing_for_executor_returns_none_when_db_empty(pool: PgPool) {
