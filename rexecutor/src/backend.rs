@@ -9,7 +9,7 @@ use std::{ops::Deref, pin::Pin};
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use futures::Stream;
-use serde::Serialize;
+use serde::{Serialize, Deserialize};
 use thiserror::Error;
 #[cfg(test)]
 use tokio::sync::mpsc;
@@ -228,7 +228,7 @@ pub struct EnqueuableJob<'a> {
 }
 
 /// The backend representation of the job.
-#[derive(Debug, Clone, Eq, PartialEq)]
+#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
 pub struct Job {
     /// The id of the job.
     pub id: i32,
@@ -408,7 +408,7 @@ pub enum BackendError {
     JobNotFound(JobId),
     /// There was an error doing IO with the backend
     #[error(transparent)]
-    Io(std::io::Error),
+    Io(#[from] std::io::Error),
 }
 
 #[cfg(test)]

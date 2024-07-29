@@ -4,7 +4,7 @@
 use std::fmt::Display;
 
 use chrono::{DateTime, Utc};
-use serde::de::DeserializeOwned;
+use serde::{de::DeserializeOwned, Deserialize, Serialize};
 
 use crate::backend;
 
@@ -145,7 +145,7 @@ impl<D, M> Job<D, M> {
 /// The status of the job.
 ///
 /// When a job is first inserted it will be in the [`JobStatus::Scheduled`] state.
-#[derive(Debug, Clone, Copy, Eq, PartialEq, Hash)]
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Hash, Serialize, Deserialize)]
 pub enum JobStatus {
     /// The status of the job after it has ran successfully.
     ///
@@ -183,7 +183,7 @@ impl JobStatus {
 }
 
 /// A record of an error that was returned from a job.
-#[derive(Debug, PartialEq, Eq, Clone)]
+#[derive(Debug, PartialEq, Eq, Clone, Serialize, Deserialize)]
 pub struct JobError {
     /// The attempt when this error occurred.
     pub attempt: u16,
@@ -196,7 +196,8 @@ pub struct JobError {
 }
 
 /// Calcification of the types of errors that can cause a job to fail to execute successfully.
-#[derive(Debug, PartialEq, Eq, Clone)]
+#[derive(Debug, PartialEq, Eq, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum ErrorType {
     /// The execution of the job resulted in a `panic`.
     Panic,
@@ -213,6 +214,7 @@ pub enum ErrorType {
     ///
     /// The details of which will be taken from the error returned as part of
     /// [`crate::executor::ExecutionResult::Error`] from [`crate::executor::Executor`].
+    #[serde(untagged)]
     Other(String),
 }
 

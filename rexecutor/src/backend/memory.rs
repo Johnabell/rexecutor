@@ -214,7 +214,7 @@ impl InMemoryBackend {
     fn insert_new_job(&self, job: EnqueuableJob<'_>) -> Result<JobId, BackendError> {
         let executor = job.executor.clone();
         let scheduled_at = job.scheduled_at;
-        let id = self.id_counter.fetch_add(1, Ordering::SeqCst);
+        let id = self.id_counter.fetch_add(1, Ordering::AcqRel);
 
         self.jobs
             .write()

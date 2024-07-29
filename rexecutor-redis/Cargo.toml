@@ -1,0 +1,17 @@
+[package]
+name = "rexecutor-redis"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+rexecutor = { path = "../rexecutor", version = "0.1.0" }
+async-trait = "0.1.79"
+chrono = { version = "0.4.37", features = ["serde"] }
+futures = "0.3.30"
+redis-macros = "0.3.0"
+redis = { version = "0.25.4", features = ["tokio-comp", "aio", "connection-manager", "json"] }
+serde = "1.0.197"
+serde_json = "1.0.115"
+tokio = { version = "1.37.0", features = ["rt", "macros", "sync", "time"] }

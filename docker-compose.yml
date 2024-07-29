@@ -8,3 +8,10 @@ services:
     environment:
       POSTGRES_PASSWORD: postgres
       POSTGRES_USER: postgres
+
+  redis:
+    image: public.ecr.aws/bitnami/redis:5.0.14
+    ports:
+      - "6379:6379"
+    environment:
+      - ALLOW_EMPTY_PASSWORD=yes
