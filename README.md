@@ -27,8 +27,7 @@ use rexecutor::prelude::*;
 use chrono::{Utc, TimeDelta};
 use rexecutor::backend::memory::InMemoryBackend;
 use rexecutor::assert_enqueued;
-let backend = InMemoryBackend::new().paused();
-Rexecutor::new(backend).set_global_backend().unwrap();
+
 struct EmailJob;
 
 #[async_trait::async_trait]
@@ -45,6 +44,9 @@ impl Executor for EmailJob {
 }
 
 tokio::runtime::Builder::new_current_thread().build().unwrap().block_on(async {
+    let backend = InMemoryBackend::new().paused();
+    Rexecutor::new(backend).set_global_backend().unwrap();
+
     let _ = EmailJob::builder()
         .with_data("bob.shuruncle@example.com".to_owned())
         .schedule_in(TimeDelta::hours(3))
@@ -74,8 +76,7 @@ use rexecutor::prelude::*;
 use chrono::{Utc, TimeDelta};
 use rexecutor::backend::memory::InMemoryBackend;
 use rexecutor::assert_enqueued;
-let backend = InMemoryBackend::new().paused();
-Rexecutor::new(backend).set_global_backend().unwrap();
+
 struct UniqueJob;
 
 #[async_trait::async_trait]
@@ -97,6 +98,9 @@ impl Executor for UniqueJob {
 }
 
 tokio::runtime::Builder::new_current_thread().build().unwrap().block_on(async {
+    let backend = InMemoryBackend::new().paused();
+    Rexecutor::new(backend).set_global_backend().unwrap();
+
     let _ = UniqueJob::builder().enqueue().await;
     let _ = UniqueJob::builder().enqueue().await;
 
@@ -138,6 +142,7 @@ use rexecutor::prelude::*;
 use std::str::FromStr;
 use chrono::TimeDelta;
 use rexecutor::backend::memory::InMemoryBackend;
+
 pub(crate) struct RefreshWorker;
 pub(crate) struct EmailScheduler;
 pub(crate) struct RegistrationWorker;
@@ -152,6 +157,7 @@ impl Executor for RefreshWorker {
         ExecutionResult::Done
     }
 }
+
 #[async_trait::async_trait]
 impl Executor for EmailScheduler {
     type Data = String;
@@ -162,6 +168,7 @@ impl Executor for EmailScheduler {
         ExecutionResult::Done
     }
 }
+
 #[async_trait::async_trait]
 impl Executor for RegistrationWorker {
     type Data = String;
@@ -172,6 +179,7 @@ impl Executor for RegistrationWorker {
         ExecutionResult::Done
     }
 }
+
 tokio::runtime::Builder::new_current_thread().build().unwrap().block_on(async {
     let backend = InMemoryBackend::new();
     Rexecutor::new(backend)
@@ -207,6 +215,7 @@ use std::sync::Arc;
 use chrono::{Utc, TimeDelta};
 use rexecutor::backend::memory::InMemoryBackend;
 use rexecutor::assert_enqueued;
+
 pub(crate) struct ExampleExecutor;
 
 #[async_trait::async_trait]
@@ -219,6 +228,7 @@ impl Executor for ExampleExecutor {
         ExecutionResult::Done
     }
 }
+
 tokio::runtime::Builder::new_current_thread().build().unwrap().block_on(async {
     let backend = Arc::new(InMemoryBackend::new().paused());
     Rexecutor::new(backend.clone()).set_global_backend().unwrap();
@@ -256,7 +266,9 @@ To setup a cron jobs to run every day at midnight you can use the following code
 ```rust
 use rexecutor::prelude::*;
 use rexecutor::backend::{Backend, memory::InMemoryBackend};
+
 struct CronJob;
+
 #[async_trait::async_trait]
 impl Executor for CronJob {
     type Data = String;
@@ -268,6 +280,7 @@ impl Executor for CronJob {
         ExecutionResult::Done
     }
 }
+
 tokio::runtime::Builder::new_current_thread().build().unwrap().block_on(async {
     let schedule = cron::Schedule::try_from("0 0 0 * * *").unwrap();
 
@@ -298,6 +311,7 @@ use rexecutor::prelude::*;
 use std::str::FromStr;
 use chrono::TimeDelta;
 use rexecutor::backend::memory::InMemoryBackend;
+
 pub(crate) struct RefreshWorker;
 pub(crate) struct EmailScheduler;
 pub(crate) struct RegistrationWorker;
@@ -312,6 +326,7 @@ impl Executor for RefreshWorker {
         ExecutionResult::Done
     }
 }
+
 #[async_trait::async_trait]
 impl Executor for EmailScheduler {
     type Data = String;
@@ -322,6 +337,7 @@ impl Executor for EmailScheduler {
         ExecutionResult::Done
     }
 }
+
 #[async_trait::async_trait]
 impl Executor for RegistrationWorker {
     type Data = String;
@@ -332,6 +348,7 @@ impl Executor for RegistrationWorker {
         ExecutionResult::Done
     }
 }
+
 let config = PrunerConfig::new(cron::Schedule::from_str("0 0 * * * *").unwrap())
     .with_max_concurrency(Some(2))
     .with_pruner(
@@ -347,6 +364,7 @@ let config = PrunerConfig::new(cron::Schedule::from_str("0 0 * * * *").unwrap())
 
 tokio::runtime::Builder::new_current_thread().build().unwrap().block_on(async {
     let backend = InMemoryBackend::new();
+
     Rexecutor::new(backend)
         .with_executor::<RefreshWorker>()
         .with_executor::<EmailScheduler>()
@@ -371,6 +389,7 @@ use rexecutor::prelude::*;
 use std::str::FromStr;
 use chrono::TimeDelta;
 use rexecutor::backend::memory::InMemoryBackend;
+
 pub(crate) struct RefreshWorker;
 pub(crate) struct EmailScheduler;
 pub(crate) struct RegistrationWorker;
@@ -385,6 +404,7 @@ impl Executor for RefreshWorker {
         ExecutionResult::Done
     }
 }
+
 #[async_trait::async_trait]
 impl Executor for EmailScheduler {
     type Data = String;
@@ -395,6 +415,7 @@ impl Executor for EmailScheduler {
         ExecutionResult::Done
     }
 }
+
 #[async_trait::async_trait]
 impl Executor for RegistrationWorker {
     type Data = String;
@@ -405,8 +426,10 @@ impl Executor for RegistrationWorker {
         ExecutionResult::Done
     }
 }
+
 tokio::runtime::Builder::new_current_thread().build().unwrap().block_on(async {
     let backend = InMemoryBackend::new();
+
     // Note this must be given a name to ensure it is dropped at the end of the scope.
     // See https://doc.rust-lang.org/book/ch18-03-pattern-syntax.html#ignoring-an-unused-variable-by-starting-its-name-with-_
     let _guard = Rexecutor::new(backend)
@@ -447,4 +470,3 @@ Currently the moderation team consists of John Bell only. We would welcome more 
 ## Licence
 
 The project is licensed under the [MIT license](https://github.com/Johnabell/atom_box/blob/master/LICENSE).
-
