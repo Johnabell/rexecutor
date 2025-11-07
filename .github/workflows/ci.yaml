@@ -40,7 +40,7 @@ jobs:
           toolchain: ${{ matrix.rust }}
           components: rustfmt, clippy
       - name: Install sqlx-cli
-        run: cargo install sqlx-cli --no-default-features --features postgres
+        run: cargo install sqlx-cli --locked --no-default-features --features postgres
       - name: Setup DB
         working-directory: ./rexecutor-sqlx
         run: sqlx database setup
@@ -81,7 +81,7 @@ jobs:
       - name: Install cargo-llvm-cov
         uses: taiki-e/install-action@cargo-llvm-cov
       - name: Install sqlx-cli
-        run: cargo install sqlx-cli --no-default-features --features postgres
+        run: cargo install sqlx-cli --locked --no-default-features --features postgres
       - name: Setup DB
         working-directory: ./rexecutor-sqlx
         run: sqlx database setup
