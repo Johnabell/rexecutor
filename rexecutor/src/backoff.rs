@@ -206,7 +206,7 @@ impl Jitter {
             Self::Absolute(delta) => delta.num_milliseconds(),
             Self::Relative(ratio) => (value.num_milliseconds() as f64 * ratio).round() as i64,
         };
-        let rand_jitter_seconds = rand::thread_rng().gen_range(-milliseconds..=milliseconds);
+        let rand_jitter_seconds = rand::rng().random_range(-milliseconds..=milliseconds);
         value + TimeDelta::milliseconds(rand_jitter_seconds)
     }
 }

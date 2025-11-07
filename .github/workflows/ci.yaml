@@ -29,7 +29,7 @@ jobs:
           --health-retries 5
     strategy:
       matrix:
-        rust: [ 1.76.0, stable, nightly ]
+        rust: [ 1.85.0, stable, nightly ]
         #features: [ --no-default-features, --all-features ]
     runs-on: ubuntu-latest
     steps:

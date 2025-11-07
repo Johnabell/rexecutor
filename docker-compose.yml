@@ -1,8 +1,6 @@
-version: "3"
-
 services:
   postgres:
-    image: public.ecr.aws/bitnami/postgresql:12
+    image: postgres:16
     ports:
       - "5432:5432"
     environment:

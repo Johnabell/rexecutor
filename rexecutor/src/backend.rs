@@ -512,22 +512,22 @@ pub(crate) mod test {
 
         assert_matches!(query, Query::Not(inner) => {
             assert_matches!(*inner, Query::And(queries) => {
-                assert_matches!(&queries[..], [
-                    Query::DataEquals(encoded_data),
-                    Query::MetadataEquals(encoded_metadata),
+                assert_matches!(&queries[..], &[
+                    Query::DataEquals(ref encoded_data),
+                    Query::MetadataEquals(ref encoded_metadata),
                     Query::IdEquals(jid),
                     Query::IdIn(jids),
                     Query::StatusEqual(JobStatus::Complete),
                     Query::TagsAllOf(&["one", "two"]),
                     Query::TagsOneOf(&["three", "four"]),
                     Query::ScheduledAtBefore(scheduled_before),
-                    Query::Or(inner),
+                    Query::Or(ref inner),
                 ] => {
                     assert_eq!(encoded_data, &serde_json::Value::String(data.clone()));
                     assert_eq!(encoded_metadata, &serde_json::Value::String(metadata.clone()));
-                    assert_eq!(jid, &job_id);
-                    assert_eq!(jids, &job_ids);
-                    assert_eq!(scheduled_before, &date);
+                    assert_eq!(jid, job_id);
+                    assert_eq!(jids, job_ids);
+                    assert_eq!(scheduled_before, date);
                     assert_matches!(&inner[..], [
                         Query::ScheduledAtAfter(scheduled_after),
                         Query::ScheduledAtEqual(scheduled_at),
@@ -549,7 +549,7 @@ pub(crate) mod test {
         .for_executor("executor");
 
         assert_matches!(query, Query::And(queries) => {
-            assert_matches!(&queries[..], [
+            assert_matches!(&queries[..], &[
                 Query::StatusEqual(JobStatus::Complete),
                 Query::TagsAllOf(&["one", "two"]),
                 Query::ExecutorEqual("executor"),
@@ -570,7 +570,7 @@ pub(crate) mod test {
                 Query::ExecutorEqual("executor"),
                 Query::Or(inner),
             ] => {
-                assert_matches!(&inner[..], [
+                assert_matches!(&inner[..], &[
                     Query::StatusEqual(JobStatus::Complete),
                     Query::TagsAllOf(&["one", "two"]),
                 ]);
