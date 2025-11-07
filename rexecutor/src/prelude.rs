@@ -4,6 +4,7 @@
 //! # #![allow(unused_imports)]
 //! use rexecutor::prelude::*;
 //! ```
+pub use crate::Rexecutor;
 pub use crate::backoff::BackoffStrategy;
 pub use crate::backoff::Jitter;
 pub use crate::backoff::Strategy;
@@ -13,4 +14,3 @@ pub use crate::job::uniqueness_criteria::{Replace, UniquenessCriteria};
 pub use crate::job::{Job, JobStatus};
 pub use crate::pruner::Pruner;
 pub use crate::pruner::PrunerConfig;
-pub use crate::Rexecutor;

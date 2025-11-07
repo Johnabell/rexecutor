@@ -449,8 +449,8 @@ use cron_runner::CronRunner;
 use executor::Executor;
 use global_backend::GlobalBackend;
 use job::runner::JobRunner;
-use pruner::{runner::PrunerRunner, PrunerConfig};
-use serde::{de::DeserializeOwned, Serialize};
+use pruner::{PrunerConfig, runner::PrunerRunner};
+use serde::{Serialize, de::DeserializeOwned};
 use thiserror::Error;
 use tokio_util::sync::CancellationToken;
 

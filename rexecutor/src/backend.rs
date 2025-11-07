@@ -18,7 +18,7 @@ use tokio_stream::wrappers::UnboundedReceiverStream;
 
 use crate::{
     executor::ExecutorIdentifier,
-    job::{self, uniqueness_criteria::UniquenessCriteria, ErrorType, JobError, JobId, JobStatus},
+    job::{self, ErrorType, JobError, JobId, JobStatus, uniqueness_criteria::UniquenessCriteria},
     pruner::PruneSpec,
 };
 
@@ -414,7 +414,7 @@ pub enum BackendError {
 #[cfg(test)]
 pub(crate) mod test {
     use super::*;
-    use crate::executor::{test::SimpleExecutor, Executor};
+    use crate::executor::{Executor, test::SimpleExecutor};
     use assert_matches::assert_matches;
     use chrono::TimeDelta;
     use std::sync::Arc;
@@ -590,10 +590,12 @@ pub(crate) mod test {
 
         assert!(smart_pointer_backend.rerun_job(42.into()).await.is_ok());
         assert!(smart_pointer_backend.update_job(job).await.is_ok());
-        assert!(smart_pointer_backend
-            .query(Query::ExecutorEqual(""))
-            .await
-            .is_ok());
+        assert!(
+            smart_pointer_backend
+                .query(Query::ExecutorEqual(""))
+                .await
+                .is_ok()
+        );
     }
 
     #[tokio::test]
@@ -608,10 +610,12 @@ pub(crate) mod test {
 
         assert!(smart_pointer_backend.rerun_job(42.into()).await.is_ok());
         assert!(smart_pointer_backend.update_job(job).await.is_ok());
-        assert!(smart_pointer_backend
-            .query(Query::ExecutorEqual(""))
-            .await
-            .is_ok());
+        assert!(
+            smart_pointer_backend
+                .query(Query::ExecutorEqual(""))
+                .await
+                .is_ok()
+        );
     }
 
     #[tokio::test]
@@ -626,10 +630,12 @@ pub(crate) mod test {
 
         assert!(smart_pointer_backend.rerun_job(42.into()).await.is_ok());
         assert!(smart_pointer_backend.update_job(job).await.is_ok());
-        assert!(smart_pointer_backend
-            .query(Query::ExecutorEqual(""))
-            .await
-            .is_ok());
+        assert!(
+            smart_pointer_backend
+                .query(Query::ExecutorEqual(""))
+                .await
+                .is_ok()
+        );
     }
 
     #[tokio::test]
@@ -644,9 +650,11 @@ pub(crate) mod test {
 
         assert!(smart_pointer_backend.rerun_job(42.into()).await.is_ok());
         assert!(smart_pointer_backend.update_job(job).await.is_ok());
-        assert!(smart_pointer_backend
-            .query(Query::ExecutorEqual(""))
-            .await
-            .is_ok());
+        assert!(
+            smart_pointer_backend
+                .query(Query::ExecutorEqual(""))
+                .await
+                .is_ok()
+        );
     }
 }

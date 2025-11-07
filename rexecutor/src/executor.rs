@@ -110,15 +110,15 @@
 //! override this value for a specific job.
 use async_trait::async_trait;
 use chrono::TimeDelta;
-use serde::{de::DeserializeOwned, Serialize};
+use serde::{Serialize, de::DeserializeOwned};
 use std::{error::Error, fmt::Display};
 
 use crate::{
+    RexecutorError,
     backend::{Backend, Query},
     backoff::{BackoffStrategy, Exponential, Jitter, Strategy},
     global_backend::GlobalBackend,
-    job::{builder::JobBuilder, query::Where, uniqueness_criteria::UniquenessCriteria, Job, JobId},
-    RexecutorError,
+    job::{Job, JobId, builder::JobBuilder, query::Where, uniqueness_criteria::UniquenessCriteria},
 };
 type Result<T> = std::result::Result<T, RexecutorError>;
 
@@ -795,7 +795,7 @@ pub(crate) mod test {
         let mut backend = MockBackend::default();
         backend.expect_query().returning(move |_| {
             Ok(vec![
-                crate::backend::Job::mock_job::<SimpleExecutor>().with_data("Data")
+                crate::backend::Job::mock_job::<SimpleExecutor>().with_data("Data"),
             ])
         });
         let query = Where::status_equals(JobStatus::Cancelled);

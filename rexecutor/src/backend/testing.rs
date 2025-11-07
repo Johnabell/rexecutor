@@ -633,10 +633,12 @@ pub async fn mark_job_retryable(backend: impl BackendTesting) {
         message: "Error Message".to_owned(),
     };
 
-    assert!(backend
-        .mark_job_retryable(id, scheduled_at, error.clone())
-        .await
-        .is_ok());
+    assert!(
+        backend
+            .mark_job_retryable(id, scheduled_at, error.clone())
+            .await
+            .is_ok()
+    );
 
     let job = backend.get_job(id).await.unwrap();
     assert_eq!(job.status, JobStatus::Retryable);

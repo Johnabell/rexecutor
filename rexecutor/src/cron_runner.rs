@@ -2,7 +2,7 @@ use std::{hash::Hash, marker::PhantomData, ops::Sub, time::Duration};
 
 use chrono::{DateTime, TimeDelta, TimeZone, Utc};
 use cron::Schedule;
-use serde::{de::DeserializeOwned, Serialize};
+use serde::{Serialize, de::DeserializeOwned};
 use tokio_util::sync::CancellationToken;
 
 use crate::{backend::Backend, executor::Executor, job::uniqueness_criteria::UniquenessCriteria};

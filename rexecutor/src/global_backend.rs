@@ -11,7 +11,7 @@
 use std::sync::Arc;
 use tokio::sync::OnceCell;
 
-use crate::{backend::Backend, RexecutorError};
+use crate::{RexecutorError, backend::Backend};
 
 /// The global backend.
 ///
@@ -45,8 +45,8 @@ impl GlobalBackend {
     /// Calling [`GlobalBackend::as_ref`] before setting the backend returns an error
     ///
     /// ```
-    /// use rexecutor::global_backend::GlobalBackend;
     /// use rexecutor::RexecutorError;
+    /// use rexecutor::global_backend::GlobalBackend;
     ///
     /// let result = GlobalBackend::as_ref();
     ///
