@@ -5,7 +5,7 @@ use crate::{
     pruner::{PruneSpec, Spec},
 };
 
-use super::{memory::KeyedJob, EnqueuableJob, Query};
+use super::{EnqueuableJob, Query, memory::KeyedJob};
 
 pub(super) trait Queryable {
     fn matches(&self, job: &KeyedJob) -> bool;

@@ -1,7 +1,7 @@
 use std::{ops::Sub, time::Duration};
 
 use chrono::{TimeDelta, Utc};
-use futures::{stream::FuturesOrdered, StreamExt};
+use futures::{StreamExt, stream::FuturesOrdered};
 use tokio_util::sync::CancellationToken;
 
 use crate::backend::Backend;

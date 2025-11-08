@@ -6,16 +6,16 @@ use std::{collections::HashMap, sync::Arc};
 use chrono::{DateTime, Utc};
 use rexecutor::{
     backend::{BackendError, EnqueuableJob, ExecutionError, Query},
-    job::{uniqueness_criteria::Resolution, JobId},
+    job::{JobId, uniqueness_criteria::Resolution},
     pruner::PruneSpec,
 };
 use serde::Deserialize;
 use sqlx::{
+    PgPool, QueryBuilder, Row,
     postgres::{PgListener, PgPoolOptions},
     types::Text,
-    PgPool, QueryBuilder, Row,
 };
-use tokio::sync::{mpsc, RwLock};
+use tokio::sync::{RwLock, mpsc};
 
 use crate::{query::ToQuery, unique::Unique};
 

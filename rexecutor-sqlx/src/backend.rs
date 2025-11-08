@@ -13,7 +13,7 @@ use rexecutor::{
 use tokio::sync::mpsc;
 use tracing::instrument;
 
-use crate::{map_err, stream::ReadyJobStream, RexecutorPgBackend};
+use crate::{RexecutorPgBackend, map_err, stream::ReadyJobStream};
 
 impl RexecutorPgBackend {
     fn handle_update(result: sqlx::Result<u64>, job_id: JobId) -> Result<(), BackendError> {
@@ -121,8 +121,8 @@ impl Backend for RexecutorPgBackend {
 
 #[cfg(test)]
 mod test {
-    use crate::types::Job;
     use crate::JobStatus;
+    use crate::types::Job;
 
     use super::*;
     use chrono::TimeDelta;

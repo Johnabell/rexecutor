@@ -8,16 +8,16 @@ use std::{
     ops::Sub,
     pin::Pin,
     sync::{
-        atomic::{AtomicBool, AtomicI32, Ordering},
         Arc, RwLock,
+        atomic::{AtomicBool, AtomicI32, Ordering},
     },
 };
 
 use crate::{
     executor::ExecutorIdentifier,
     job::{
-        uniqueness_criteria::{Resolution, UniquenessCriteria},
         JobError, JobId, JobStatus,
+        uniqueness_criteria::{Resolution, UniquenessCriteria},
     },
     pruner::{PruneBy, PruneSpec},
 };
@@ -27,7 +27,7 @@ use futures::Stream;
 use tokio::sync::mpsc;
 
 use super::{
-    queryable::Queryable, Backend, BackendError, EnqueuableJob, ExecutionError, Job, Query,
+    Backend, BackendError, EnqueuableJob, ExecutionError, Job, Query, queryable::Queryable,
 };
 use chrono::{DateTime, TimeDelta, Utc};
 

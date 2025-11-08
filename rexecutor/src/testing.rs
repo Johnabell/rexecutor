@@ -252,9 +252,9 @@ mod test {
     use chrono::{TimeDelta, Utc};
 
     use crate::{
-        backend::memory::InMemoryBackend,
-        executor::{test::SimpleExecutor, Executor},
         Rexecutor,
+        backend::memory::InMemoryBackend,
+        executor::{Executor, test::SimpleExecutor},
     };
 
     #[tokio::test]

@@ -68,11 +68,11 @@
 use std::marker::PhantomData;
 
 use crate::{
+    RexecutorError,
     backend::{Backend, EnqueuableJob},
     executor::Executor,
     global_backend::GlobalBackend,
     job::uniqueness_criteria::UniquenessCriteria,
-    RexecutorError,
 };
 use chrono::{DateTime, Duration, Utc};
 
@@ -520,9 +520,9 @@ mod tests {
     use std::sync::Arc;
 
     use crate::{
+        Rexecutor,
         backend::{BackendError, MockBackend},
         executor::test::SimpleExecutor,
-        Rexecutor,
     };
 
     use super::*;

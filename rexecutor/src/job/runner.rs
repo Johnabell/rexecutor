@@ -5,7 +5,7 @@ use futures::StreamExt;
 use serde::de::DeserializeOwned;
 use tokio::task::JoinError;
 use tokio_util::sync::CancellationToken;
-use tracing::{instrument, Instrument};
+use tracing::{Instrument, instrument};
 
 use crate::{
     backend::Backend,
