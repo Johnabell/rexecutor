@@ -1191,7 +1191,7 @@ dependencies = [
 
 [[package]]
 name = "rexecutor"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "assert_matches",
  "async-stream",
@@ -1213,7 +1213,7 @@ dependencies = [
 
 [[package]]
 name = "rexecutor-sqlx"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "async-stream",
  "async-trait",
