@@ -30,15 +30,14 @@ impl ReadyJobStream {
                     .min(Self::DEFAULT_DELAY),
                 _ => Self::DEFAULT_DELAY,
             };
-            if delay <= Self::DELTA {
-                if let Some(job) = self
+            if delay <= Self::DELTA
+                && let Some(job) = self
                     .backend
                     .load_job_mark_as_executing_for_executor(self.executor_identifier.as_str())
                     .await
                     .map_err(|_| BackendError::BadState)?
-                {
-                    return job.try_into();
-                }
+            {
+                return job.try_into();
             }
             tokio::select! {
                 _ = self.receiver.recv() => { },

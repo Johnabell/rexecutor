@@ -32,7 +32,7 @@
 //! ```
 
 use chrono::TimeDelta;
-use rand::Rng;
+use rand::RngExt;
 
 /// Type that can be used to implement a backoff strategy.
 pub trait Strategy {
